@@ -86,13 +86,21 @@ Windows, Linux and macOS for every push and pull request.
 
 ## Publishing to the PowerShell Gallery
 
+Publishing is fully automated through GitHub Releases:
+
 1. Implement/adjust cmdlets and tests, update `CHANGELOG.md`.
 2. Bump `ModuleVersion` in the module's `.psd1`.
-3. Push a `v*` git tag — the
-   [Publish workflow](.github/workflows/Publish.yml) runs the full gate
-   (analyze, test, package) and publishes every module whose version is
-   newer than the one already on the gallery. It needs the `PS_GALLERY_KEY`
-   repository secret. Modules are never re-published at the same version.
+3. Push to `main`, then create a **GitHub Release** (e.g. `v0.1.0`). The
+   [Publish workflow](.github/workflows/Publish.yml) fires automatically,
+   runs the full gate (analyze, test, package) and publishes **every module
+   whose version is newer than the one on the gallery** — so one release can
+   update several modules at once, azure-powershell style. Modules are never
+   re-published at the same version.
+
+The workflow authenticates with the `PS_GALLERY_KEY` repository secret
+(*Settings → Secrets and variables → Actions*). You can also trigger it
+manually with the `dry_run` option to validate the pipeline without
+touching the gallery.
 
 ## Repository layout
 
