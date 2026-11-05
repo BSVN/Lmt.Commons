@@ -4,6 +4,22 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.1.0] - 2026-11-05
+
+### Added
+
+- `Bsn.Host` module (BSN counterpart of Microsoft.PowerShell.Host) with
+  `Start-InteractiveTranscript`, which records an interactive terminal
+  session - including full-screen TUI applications such as sconfig, vim,
+  htop or nmtui - into a replayable asciicast v2 file, implementing the
+  community request
+  [PowerShell#28353](https://github.com/PowerShell/PowerShell/issues/28353)
+  at the scope a PowerShell Gallery module can deliver:
+  - Windows: ConPTY pseudo-console engine (Windows 10 1809+), with optional
+    keystroke recording via `-RecordInput`.
+  - Linux: `script(1)` with exact per-chunk timing (util-linux).
+  - macOS: `script(1)` with approximated per-line timing (BSD).
+
 ## [0.1.0] - 2026-11-05
 
 ### Added

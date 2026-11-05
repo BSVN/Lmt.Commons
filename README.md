@@ -13,6 +13,7 @@ one command.
 | Module                                                            | Description                                                            | Status |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ------ |
 | [Bsn.SystemManagement](src/Bsn.SystemManagement)                  | Cross-platform basic system management: sleep/hibernate (`Suspend-Computer`) | 0.1.0 |
+| [Bsn.Host](src/Bsn.Host)                                          | Host-level terminal session recording incl. TUI apps (`Start-InteractiveTranscript`, asciicast v2) | 0.1.0 (branch) |
 
 ## Install
 

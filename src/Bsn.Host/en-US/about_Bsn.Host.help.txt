@@ -1,0 +1,50 @@
+TOPIC
+    about_Bsn.Host
+
+SHORT DESCRIPTION
+    Host-level terminal session recording for PowerShell, capturing
+    full-screen TUI applications into replayable asciicast v2 files.
+
+LONG DESCRIPTION
+    The Bsn.Host module is the BSN counterpart of Microsoft.PowerShell.Host:
+    it covers the host/transcript domain. Its first cmdlet,
+    Start-InteractiveTranscript, records what Start-Transcript cannot: the
+    terminal session itself, including full-screen interactive TUI
+    applications such as sconfig, vim, htop or nmtui.
+
+    The recorded command runs inside a pseudo-terminal whose output stream
+    is proxied to the real console and recorded with timestamps into an
+    asciicast v2 (.cast) file that plays back with:
+
+        asciinema play <file>.cast
+
+  PLATFORM SUPPORT
+
+    Windows: ConPTY pseudo-console (requires Windows 10 1809+); optional
+             keystroke recording via -RecordInput.
+    Linux:   script(1) with exact timing (util-linux).
+    macOS:   script(1) with approximated timestamps (BSD script).
+
+  SCENARIOS
+
+    - Audit and compliance records of privileged interactive sessions
+    - Support and incident response: reproduce exactly what was on screen
+    - Training material and shareable session captures
+
+  BACKGROUND
+
+    Implements the community request tracked in
+    https://github.com/PowerShell/PowerShell/issues/28353 at the scope a
+    PowerShell Gallery module can deliver. Transparent recording of the
+    entire host session is only possible from inside the host itself; this
+    module instead records a nested session, which captures every child
+    process launched within it, including TUI applications.
+
+KEYWORDS
+    transcript, recording, terminal, session, asciicast, asciinema, TUI,
+    audit, screencast
+
+SEE ALSO
+    Start-InteractiveTranscript
+    Start-Transcript
+    Stop-Transcript

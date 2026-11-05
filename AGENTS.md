@@ -81,10 +81,19 @@ before:
 
 ## Module-specific constraints
 
+- `src/Bsn.Host/Private/Start-BsnWindowsPtyRecording.ps1` embeds a C#
+  ConPTY engine compiled via Add-Type. It must stay C# 5 compatible
+  (no string interpolation, no `out var`) because Windows PowerShell 5.1
+  compiles it, must restore the console input mode in `finally`, and the
+  cast writer must emit UTF-8 without BOM with LF line endings.
+  `ConvertTo-BsnAsciicast` is the pure, Pester-tested conversion logic -
+  extend tests there rather than smoke-testing the native engine.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain
   fully self-contained (no references to module functions/variables): it is
   executed locally AND shipped as-is to remote machines via
   `Invoke-Command -FilePath`. Duplicating tiny helpers inside it is intended.
+  The same self-containment rule applies to `Get-BsnOperatingSystem`, which
+  is deliberately duplicated per module instead of cross-imported.
 - Private helper naming: `<ApprovedVerb>-Bsn<Noun>` (e.g. `Get-BsnOperatingSystem`).
 - Every public cmdlet ships three doc artifacts: comment-based help in the
   function (source of truth, renders via Get-Help), `en-US/about_*.help.txt`,
