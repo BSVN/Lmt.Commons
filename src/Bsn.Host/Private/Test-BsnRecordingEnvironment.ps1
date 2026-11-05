@@ -1,3 +1,5 @@
+using module Bsn.Common
+
 <#
 .SYNOPSIS
     Validates the environment before an interactive recording starts.
@@ -18,15 +20,19 @@
 function Test-BsnRecordingEnvironment {
     [CmdletBinding()]
     param(
+        # String on purpose: a BsnOperatingSystem type constraint breaks Pester's
+        # Mock metadata generation for cross-module dynamic enums. The value is
+        # the enum's string form (Get-BsnOperatingSystem converts on binding).
         [Parameter(Mandatory = $true)]
-        [Bsn.Common.BsnOperatingSystem]$Platform
+        [ValidateSet('Windows', 'Linux', 'macOS', 'Unknown')]
+        [string]$Platform
     )
 
-    if ($Platform -eq [Bsn.Common.BsnOperatingSystem]::Unknown) {
+    if ($Platform -eq 'Unknown') {
         throw 'Interactive transcripts are not supported on this platform (detected Unknown).'
     }
 
-    if ($Platform -eq [Bsn.Common.BsnOperatingSystem]::Windows) {
+    if ($Platform -eq 'Windows') {
         $osVersion = [System.Environment]::OSVersion.Version
         if (($osVersion.Major -lt 10) -or (($osVersion.Major -eq 10) -and ($osVersion.Build -lt 17763))) {
             throw ('Interactive transcripts on Windows require Windows 10 1809 / Windows Server 2019 or newer for pseudo-console support (detected {0}).' -f $osVersion)

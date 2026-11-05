@@ -1,3 +1,5 @@
+using module Bsn.Common
+
 <#
 .SYNOPSIS
     Records an interactive terminal session - including full-screen TUI
@@ -178,7 +180,7 @@ function Start-InteractiveTranscript {
         $env:BsnHostRecordingStopFile = $stopFilePath
 
         try {
-            if ($platform -eq [Bsn.Common.BsnOperatingSystem]::Windows) {
+            if ($platform -eq [BsnOperatingSystem]::Windows) {
                 $commandLine = Get-BsnRecordingCommandLine -Command $Command
                 $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath
             }

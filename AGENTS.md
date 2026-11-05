@@ -91,12 +91,34 @@ before:
   runs; `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
   here-strings inside .ps1 files.
 - Shared helpers are factored into `src/Bsn.Common` (required by the other
-  modules via RequiredModules): `Get-BsnOperatingSystem` returns the
-  `BsnOperatingSystem` enum using the native
-  `RuntimeInformation.IsOSPlatform` API with a `$env:OS` fallback for old
-  Windows PowerShell. Do not duplicate it in consumer modules; module
-  loaders prefer the repo sibling during development and fall back to the
-  gallery copy.
+  modules via RequiredModules, the Az/VMware-style dependency chain):
+  `Get-BsnOperatingSystem` returns the native PowerShell `BsnOperatingSystem`
+  enum using the native `RuntimeInformation.IsOSPlatform` API with an
+  `$env:OS` fallback for old Windows PowerShell. Do not duplicate it in
+  consumer modules; module loaders prefer the repo sibling during development
+  and fall back to the gallery copy.
+- PowerShell keyword types (`enum`/`class`) have empirically verified rules
+  in this repo (bisected on PS 5.1 and PS 7 - see CHANGELOG):
+  - Define the type in the same compilation unit (file) as code that uses
+    it bare: `Bsn.Common.psm1` defines the enum and its function together.
+  - Consumer files that need the type must start with
+    `using module Bsn.Common` and then use the bare name.
+  - NEVER put a bare keyword-type literal inside an attribute in a
+    dot-sourced file (e.g. `[OutputType([BsnOperatingSystem])]`):
+    attributes bind at compile time, cannot resolve dynamic enums, and the
+    binding failure poisons the first call of that function. This is the
+    exact bug that originally forced a C# enum; use the string form
+    `[OutputType('BsnOperatingSystem')]` instead.
+  - Bare literals in function bodies DO work cross-module once the
+    defining module is loaded - the consumer module loaders import
+    Bsn.Common before dot-sourcing function files, so this always holds.
+  - Enum PARAM TYPE CONSTRAINTS (e.g. `[BsnOperatingSystem]$Platform`)
+    work for real calls but break Pester's `Mock` (CommandMetadata
+    generation cannot resolve cross-module dynamic enums) - type such
+    parameters as [string] with a ValidateSet instead.
+  - Avoid `using module Bsn.Common` in consumer files: it resolves the
+    module name through PSModulePath at parse time and breaks when the
+    module was imported by path (dev flows).
 - The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
   restore the console input mode in `finally`, close the PTY-side pipe
   handles after CreatePseudoConsole (EchoCon pattern), and emit cast files

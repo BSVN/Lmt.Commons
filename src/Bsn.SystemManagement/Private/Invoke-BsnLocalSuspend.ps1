@@ -1,3 +1,5 @@
+using module Bsn.Common
+
 <#
 .SYNOPSIS
     Suspends (sleeps or hibernates) the local computer.
@@ -20,7 +22,7 @@ function Invoke-BsnLocalSuspend {
         [switch]$Force
     )
 
-    if ((Get-BsnOperatingSystem) -eq [Bsn.Common.BsnOperatingSystem]::Windows) {
+    if ((Get-BsnOperatingSystem) -eq [BsnOperatingSystem]::Windows) {
         $succeeded = [Bsn.SystemManagement.Interop.PowerProf]::SetSuspendState([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent, $false)
         if (-not $succeeded) {
             $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()

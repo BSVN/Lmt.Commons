@@ -8,7 +8,6 @@
     Description = 'Shared internal helpers for the Bsn.* module family: operating system detection and common types.'
     PowerShellVersion = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
-    RequiredAssemblies = @('lib/Bsn.Common.dll')
     FunctionsToExport = @('Get-BsnOperatingSystem')
     CmdletsToExport = @()
     VariablesToExport = @()

@@ -37,6 +37,17 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   (`Get-BsnOperatingSystem` returning the `BsnOperatingSystem` enum,
   native `RuntimeInformation.IsOSPlatform` detection with a fallback for
   old Windows PowerShell); required by Bsn.Host and Bsn.SystemManagement.
+- `BsnOperatingSystem` is a native PowerShell enum in `Bsn.Common.psm1`
+  (no compiled assembly): the original C# version was a workaround for a
+  misdiagnosed failure. Bisecting on PS 5.1 and PS 7 showed the real root
+  cause was `[OutputType([BsnOperatingSystem])]` - a keyword-type literal
+  inside an attribute in a dot-sourced file cannot bind (attributes bind
+  at compile time and cannot resolve dynamic enums), which poisoned the
+  first function call. Consumers use bare names in function bodies
+  (bodies resolve cross-module once Bsn.Common is loaded), string-typed
+  parameters with ValidateSet where Pester mocks apply, and attribute
+  positions use the string form; `using module` is avoided because
+  its parse-time PSModulePath resolution breaks path-imported dev flows.
 - `Start-InteractiveTranscript`: Start-Transcript-like workflow - the
   default recorded shell is pwsh with Bsn.Host auto-imported, and
   `Stop-InteractiveTranscript` finalizes the recording from inside the
