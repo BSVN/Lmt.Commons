@@ -1,0 +1,39 @@
+TOPIC
+    about_Bsn.SystemManagement
+
+SHORT DESCRIPTION
+    Cross-platform system management cmdlets that fill the gaps left by the
+    built-in PowerShell modules.
+
+LONG DESCRIPTION
+    The Bsn.SystemManagement module provides cmdlets for basic system
+    management tasks that PowerShell ships without. It is part of the BSN
+    family of modules maintained in the Lmt.Commons repository
+    (https://github.com/BSVN/Lmt.Commons).
+
+    The first cmdlet, Suspend-Computer, puts a computer into a low-power
+    state (sleep or hibernate) on Windows, Linux and macOS. The request was
+    proposed to the PowerShell team in
+    https://github.com/PowerShell/PowerShell/issues/28164 and, following the
+    recommendation of the PowerShell Cmdlets Working Group, is delivered as
+    a community module instead of a built-in cmdlet.
+
+  PLATFORM SUPPORT
+
+    Windows: calls the documented SetSuspendState API in powrprof.dll.
+    Linux:   uses systemctl suspend/hibernate (loginctl as fallback).
+    macOS:   uses pmset sleepnow (hibernate is not supported).
+
+  REMOTE COMPUTERS
+
+    Suspend-Computer accepts remote computer names and connects over
+    PowerShell remoting (WinRM or SSH). The target must have remoting
+    enabled; the module itself does not need to be installed remotely.
+
+KEYWORDS
+    suspend, sleep, hibernate, power, system management
+
+SEE ALSO
+    Suspend-Computer
+    Stop-Computer
+    Restart-Computer

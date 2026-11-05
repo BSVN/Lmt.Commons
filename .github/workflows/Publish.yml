@@ -1,0 +1,42 @@
+name: Publish modules
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Validate publishing logic without touching the gallery.'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    name: Package and publish to the PowerShell Gallery
+    runs-on: windows-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Bootstrap development dependencies
+        shell: pwsh
+        run: ./build.ps1 -Bootstrap
+
+      - name: Analyze, test and package every module
+        shell: pwsh
+        run: ./build.ps1 -Task Analyze, Test, Package
+
+      - name: Upload module packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-packages
+          path: out/packages/*.zip
+          if-no-files-found: error
+
+      - name: Publish to the PowerShell Gallery
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        shell: pwsh
+        env:
+          PS_GALLERY_KEY: ${{ secrets.PS_GALLERY_KEY }}
+        run: ./build.ps1 -Task Publish

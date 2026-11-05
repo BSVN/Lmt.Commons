@@ -1,0 +1,30 @@
+BeforeAll {
+    $moduleRoot = Split-Path -Parent -Path $PSScriptRoot
+    $script:ManifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.SystemManagement.psd1'
+    Import-Module -Name $script:ManifestPath -Force -ErrorAction 'Stop'
+}
+
+Describe 'Bsn.SystemManagement manifest' {
+    It 'passes manifest validation' {
+        Test-ModuleManifest -Path $script:ManifestPath | Should -Not -BeNullOrEmpty
+    }
+
+    It 'exports exactly the intended public functions' {
+        $manifest = Test-ModuleManifest -Path $script:ManifestPath
+        ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Suspend-Computer'
+    }
+}
+
+Describe 'Bsn.SystemManagement module' {
+    It 'loads and exposes its public commands' {
+        Get-Command -Name 'Suspend-Computer' -Module 'Bsn.SystemManagement' -ErrorAction 'SilentlyContinue' | Should -Not -BeNullOrEmpty
+    }
+
+    It 'ships the self-contained suspend action script' {
+        Test-Path -LiteralPath (Join-Path -Path $moduleRoot -ChildPath 'scripts/Suspend-Action.ps1') | Should -BeTrue
+    }
+
+    It 'detects a known local operating system' {
+        & (Get-Module -Name 'Bsn.SystemManagement') { Get-BsnOperatingSystem } | Should -BeIn @('Windows', 'Linux', 'macOS', 'Unknown')
+    }
+}

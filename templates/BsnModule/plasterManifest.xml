@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<plasterManifest schemaVersion="1.1" templateType="Project" xmlns="http://www.microsoft.com/schemas/PowerShell/Plaster/v1">
+  <metadata>
+    <name>BsnModule</name>
+    <id>d7a6b15f-9c94-4c8f-9a3a-1b64d5e2c7f8</id>
+    <version>0.1.0</version>
+    <title>BSN PowerShell module scaffold</title>
+    <description>Scaffolds a new Bsn.* PowerShell module inside the Lmt.Commons repository, including the module manifest, public/private command structure, an about_ help topic and Pester tests.</description>
+    <author>BSVN</author>
+    <tags>PowerShell, Module, BSN, Scaffold</tags>
+  </metadata>
+  <parameters>
+    <parameter name="ModuleName" type="text" prompt="Enter the module name (must start with 'Bsn.'):" default="Bsn.Example" pattern="^Bsn\.[A-Z][A-Za-z0-9]{1,50}$" />
+    <parameter name="CmdletName" type="text" prompt="Enter the name of the first public command (approved Verb-Noun):" default="Get-Example" pattern="^[A-Z][a-z]+\-[A-Z][A-Za-z0-9]+$" />
+    <parameter name="Description" type="text" prompt="Enter a short module description:" default="A BSN PowerShell module." />
+    <parameter name="Version" type="text" prompt="Enter the initial module version:" default="0.1.0" pattern="^\d+\.\d+\.\d+$" />
+    <parameter name="Author" type="text" prompt="Enter the author name:" default="BSVN" />
+  </parameters>
+  <content>
+    <message>Scaffolding your BSN module. Plaster is about to create the following structure:
+
+        src/ModuleName/ModuleName.psd1
+        src/ModuleName/ModuleName.psm1
+        src/ModuleName/Public/CmdletName.ps1
+        src/ModuleName/Private/ (helper functions)
+        src/ModuleName/en-US/about_ModuleName.help.txt
+        src/ModuleName/tests/ (Pester tests)</message>
+
+    <templateFile source="module.psd1" destination="src/${PLASTER_PARAM_ModuleName}/${PLASTER_PARAM_ModuleName}.psd1" />
+    <templateFile source="module.psm1" destination="src/${PLASTER_PARAM_ModuleName}/${PLASTER_PARAM_ModuleName}.psm1" />
+    <templateFile source="Public/Cmdlet.ps1" destination="src/${PLASTER_PARAM_ModuleName}/Public/${PLASTER_PARAM_CmdletName}.ps1" />
+    <file source="Private/README.md" destination="src/${PLASTER_PARAM_ModuleName}/Private/README.md" />
+    <templateFile source="about_Module.help.txt" destination="src/${PLASTER_PARAM_ModuleName}/en-US/about_${PLASTER_PARAM_ModuleName}.help.txt" />
+    <templateFile source="Module.Tests.ps1" destination="src/${PLASTER_PARAM_ModuleName}/tests/${PLASTER_PARAM_ModuleName}.Tests.ps1" />
+    <templateFile source="Cmdlet.Tests.ps1" destination="src/${PLASTER_PARAM_ModuleName}/tests/${PLASTER_PARAM_CmdletName}.Tests.ps1" />
+
+    <message>Your new module has been created!
+
+    Next steps:
+      1. Implement the command in Public/ and helpers in Private/.
+      2. Adjust the Pester tests under tests/.
+      3. Run ./build.ps1 -Task Analyze, Test
+      4. Bump the module version and push a v* tag to publish to the PowerShell Gallery.</message>
+  </content>
+</plasterManifest>

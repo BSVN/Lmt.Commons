@@ -1,0 +1,12 @@
+TOPIC
+    about_<%= $PLASTER_PARAM_ModuleName %>
+
+SHORT DESCRIPTION
+    <%= $PLASTER_PARAM_ModuleName %> - <%= $PLASTER_PARAM_Description %>
+
+LONG DESCRIPTION
+    TODO: Describe <%= $PLASTER_PARAM_ModuleName %> in detail, including its
+    platform support and any requirements.
+
+SEE ALSO
+    https://github.com/BSVN/Lmt.Commons
