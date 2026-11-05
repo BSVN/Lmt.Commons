@@ -31,7 +31,10 @@ function Start-BsnUnixPtyRecording {
 
         [string]$ShellName = 'shell',
 
-        [string]$StopFilePath
+        [string]$StopFilePath,
+
+        [ValidateSet(2, 3)]
+        [int]$CastVersion = 2
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -117,10 +120,10 @@ function Start-BsnUnixPtyRecording {
         $stopwatch.Stop()
 
         if ($supportsTiming) {
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
         }
         else {
-            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName
+            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
         }
     }
     finally {

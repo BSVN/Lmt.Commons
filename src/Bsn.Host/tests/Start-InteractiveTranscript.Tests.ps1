@@ -103,6 +103,27 @@ Describe 'Start-InteractiveTranscript' {
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' { }
         }
 
+        It 'writes asciicast v2 by default and v3 on request' {
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'v2default.cast')
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CastVersion -eq 2 }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'v3.cast') -CastVersion 3
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CastVersion -eq 3 }
+        }
+
+        It 'threads the recording indicator into the nested shell command line' {
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'indicator.cast')
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -notlike '*function prompt*' }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'indicator2.cast') -ShowRecordingIndicator
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { ($CommandLine -like '*function prompt*') -and ($CommandLine -like '*0x23FA*') }
+        }
+
+        It 'warns when the indicator is combined with -Command' {
+            Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'indicator3.cast') -ShowRecordingIndicator -WarningVariable indicatorWarning
+            ($indicatorWarning | Where-Object -FilterScript { $_ -like '*only to the interactive shell mode*' }) | Should -Not -BeNullOrEmpty
+        }
+
         It 'does not render anything for the default Asciicast format' {
             Mock -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' { '/should/not/happen.gif' }
 

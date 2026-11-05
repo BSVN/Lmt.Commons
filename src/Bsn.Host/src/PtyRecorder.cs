@@ -165,11 +165,11 @@ namespace Bsn.Host.Interop
 
         /// <summary>
         /// Runs commandLine inside a pseudo-console, proxying to the real console and
-        /// recording to castPath (asciicast v2). When stopFilePath is non-empty, creating
-        /// that file terminates the recorded process and finalizes the recording
-        /// (the Stop-InteractiveTranscript signaling channel).
+        /// recording to castPath (asciicast v2 or v3 depending on castVersion). When
+        /// stopFilePath is non-empty, creating that file terminates the recorded process
+        /// and finalizes the recording (the Stop-InteractiveTranscript signaling channel).
         /// </summary>
-        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath)
+        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion)
         {
             IntPtr hRealIn = GetStdHandle(STD_INPUT_HANDLE);
             IntPtr hRealOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -240,7 +240,7 @@ namespace Bsn.Host.Interop
                 startupInfo.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
                 startupInfo.lpAttributeList = attributeList;
 
-                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput);
+                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion);
 
                 // Raw VT input so keystrokes (including escape sequences for TUI apps) pass through.
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, ENABLE_VIRTUAL_TERMINAL_INPUT); }
@@ -308,6 +308,12 @@ namespace Bsn.Host.Interop
 
                 uint exitCode = 0;
                 GetExitCodeProcess(childProcess, out exitCode);
+
+                // asciicast v3 recordings are finalized with an 'x' exit-status event.
+                if ((castVersion == 3) && (cast != null))
+                {
+                    cast.WriteExit(clock.Elapsed.TotalSeconds, (int)exitCode);
+                }
 
                 RecordingResult result = new RecordingResult();
                 result.ExitCode = (int)exitCode;
@@ -387,30 +393,63 @@ namespace Bsn.Host.Interop
     }
 
     /// <summary>
-    /// Writes an asciicast v2 file: a JSON header line followed by JSON event
-    /// lines ([time, "o"|"i"|"r", data]). UTF-8 without BOM, LF line endings,
-    /// invariant number formatting, incremental (streaming) writes.
+    /// Writes an asciicast v2 or v3 file: a JSON header line followed by JSON event
+    /// lines. v2 events carry absolute times; v3 events carry intervals since the
+    /// previous event (millisecond precision) and the stream is finalized with an
+    /// 'x' exit-status event. UTF-8 without BOM, LF line endings, invariant number
+    /// formatting, incremental (streaming) writes.
     /// </summary>
     internal class CastWriter : IDisposable
     {
         private StreamWriter writer;
         private object sync = new object();
+        private int castVersion;
+        private double previousElapsed;
 
-        public CastWriter(string path, int width, int height, string shellName, bool recordedInput)
+        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
+            this.castVersion = castVersion;
+            previousElapsed = 0.0;
             long timestamp = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
             string title = "Bsn.Host interactive transcript";
             if (recordedInput)
             {
                 title = title + " (input captured)";
             }
-            writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
-                + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
-                + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                + ", \"title\": \"" + Escape(title) + "\""
-                + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
+            if (castVersion == 3)
+            {
+                // asciicast v3 header: version + term{cols,rows} are required.
+                writer.WriteLine("{\"version\": 3, \"term\": {\"cols\": " + width.ToString(CultureInfo.InvariantCulture)
+                    + ", \"rows\": " + height.ToString(CultureInfo.InvariantCulture)
+                    + ", \"type\": \"xterm-256color\"}"
+                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
+                    + ", \"command\": \"" + Escape(shellName) + "\""
+                    + ", \"title\": \"" + Escape(title) + "\""
+                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
+            }
+            else
+            {
+                writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
+                    + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
+                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
+                    + ", \"title\": \"" + Escape(title) + "\""
+                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
+            }
+        }
+
+        private string FormatTime(double seconds)
+        {
+            if (castVersion == 3)
+            {
+                // v3: interval since the previous event, millisecond precision (spec recommendation).
+                double interval = seconds - previousElapsed;
+                if (interval < 0) { interval = 0; }
+                previousElapsed = seconds;
+                return interval.ToString("0.###", CultureInfo.InvariantCulture);
+            }
+            return seconds.ToString("0.######", CultureInfo.InvariantCulture);
         }
 
         public void WriteEvent(double seconds, bool isInput, byte[] chunk)
@@ -419,7 +458,7 @@ namespace Bsn.Host.Interop
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + seconds.ToString("0.######", CultureInfo.InvariantCulture)
+                writer.WriteLine("[" + FormatTime(seconds)
                     + ", \"" + (isInput ? "i" : "o") + "\", \"" + text + "\"]");
             }
         }
@@ -429,8 +468,18 @@ namespace Bsn.Host.Interop
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + seconds.ToString("0.######", CultureInfo.InvariantCulture)
+                writer.WriteLine("[" + FormatTime(seconds)
                     + ", \"r\", \"" + width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture) + "\"]");
+            }
+        }
+
+        public void WriteExit(double seconds, int exitCode)
+        {
+            lock (sync)
+            {
+                if (writer == null) { return; }
+                writer.WriteLine("[" + FormatTime(seconds)
+                    + ", \"x\", \"" + exitCode.ToString(CultureInfo.InvariantCulture) + "\"]");
             }
         }
 

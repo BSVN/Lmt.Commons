@@ -10,7 +10,7 @@ at module scope.
 
 | Cmdlet | Purpose |
 |---|---|
-| `Start-InteractiveTranscript` | Record an interactive session (including TUI apps) to asciicast v2 |
+| `Start-InteractiveTranscript` | Record an interactive session (including TUI apps) to asciicast v2 or v3 |
 | `Stop-InteractiveTranscript` | Finalize the recording from inside the recorded session |
 | `Show-InteractiveTranscript` | Play a recording back in the console (`asciinema play`, PowerShell-native) |
 
@@ -32,9 +32,24 @@ automatically so `Stop-InteractiveTranscript` is available in the recording;
 # Command-scoped recording ends when the command exits
 Start-InteractiveTranscript -Command 'vim notes.txt' -Path .\notes.cast -Force
 
+# Recording-aware prompt in the nested shell (Windows, optional)
+Start-InteractiveTranscript -ShowRecordingIndicator
+
+# asciicast v3 output (per the current RFC 421 draft: interval events,
+# term header object, trailing 'x' exit event)
+Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro.cast -CastVersion 3
+
 # With idle compression and a rendered video (needs agg + ffmpeg)
 Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro -RecordingFormat WebM -RecordIdleTimeLimit 5
 ```
+
+- **CastVersion** - `2` (default, widest player compatibility) or `3`
+  (matches the current RFC 421 draft: per-event intervals at millisecond
+  precision, `term` header object, `x` exit event). `Show-InteractiveTranscript`
+  reads both.
+- **ShowRecordingIndicator** - optional recording-aware prompt in the
+  nested shell (dot glyph + `REC PS <path>> `); Windows,
+  interactive-shell mode only.
 
 Playback:
 

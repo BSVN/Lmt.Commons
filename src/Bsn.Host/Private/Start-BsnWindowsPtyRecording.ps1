@@ -31,11 +31,14 @@ function Start-BsnWindowsPtyRecording {
 
         [string]$ShellName = 'shell',
 
-        [string]$StopFilePath
+        [string]$StopFilePath,
+
+        [ValidateSet(2, 3)]
+        [int]$CastVersion = 2
     )
 
     try {
-        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath)
+        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion)
     }
     catch [System.Runtime.InteropServices.EntryPointNotFoundException] {
         throw 'Interactive transcripts on Windows require pseudo-console support (Windows 10 1809 or newer).'

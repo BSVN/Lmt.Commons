@@ -42,6 +42,15 @@ LONG DESCRIPTION
 
   RECORDING OPTIONS (RFC 421 SEMANTICS)
 
+    -CastVersion selects the asciicast format version: 2 (default) or 3.
+    Version 3 matches the current RFC 421 draft: events carry intervals
+    since the previous event at millisecond precision, the header carries
+    the terminal size in a term object, and the stream ends with an 'x'
+    exit-status event. Show-InteractiveTranscript reads both versions.
+
+    -ShowRecordingIndicator customizes the nested shell's prompt to show
+    a recording indicator (Windows, interactive shell mode only).
+
     -RecordingFormat selects the deliverable: Asciicast (default, .cast
     only), Gif (rendered via the external 'agg' renderer), WebM and Mp4
     (rendered via 'agg', transcoded via 'ffmpeg'). The .cast file is

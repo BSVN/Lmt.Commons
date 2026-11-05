@@ -37,7 +37,12 @@ function ConvertTo-BsnAsciicast {
 
         [int]$Height = 24,
 
-        [string]$ShellName = 'shell'
+        [string]$ShellName = 'shell',
+
+    [ValidateSet(2, 3)]
+    [int]$CastVersion = 2,
+
+    [int]$ExitCode = 0
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
@@ -99,15 +104,39 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
-        $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
-                $Width, $Height, $timestamp, $ShellName))
+        if ($CastVersion -eq 3) {
+            $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
+                    $Width, $Height, $timestamp, $ShellName))
+        }
+        else {
+            $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
+                    $Width, $Height, $timestamp, $ShellName))
+        }
 
+        $previousTime = 0.0
         foreach ($castEvent in $events) {
             $charBuffer = [char[]]::new($castEvent.Count)
             $charCount = $decoder.GetChars($outputBytes, $castEvent.Offset, $castEvent.Count, $charBuffer, 0)
             $eventText = [string]::new($charBuffer, 0, $charCount)
             $jsonText = $eventText | ConvertTo-Json -Compress
-            $writer.WriteLine(('[{0}, "o", {1}]' -f $castEvent.Time.ToString('0.######', $invariantCulture), $jsonText))
+
+            $formattedTime = if ($CastVersion -eq 3) {
+                # v3: interval since the previous event, millisecond precision (spec recommendation).
+                $interval = [math]::Round($castEvent.Time - $previousTime, 3)
+                if ($interval -lt 0) { $interval = 0 }
+                $previousTime = $castEvent.Time
+                $interval.ToString('0.###', $invariantCulture)
+            }
+            else {
+                $castEvent.Time.ToString('0.######', $invariantCulture)
+            }
+
+            $writer.WriteLine(('[{0}, "o", {1}]' -f $formattedTime, $jsonText))
+        }
+
+        if ($CastVersion -eq 3) {
+            # v3 recordings are finalized with an 'x' exit-status event.
+            $writer.WriteLine(('[0, "x", "{0}"]' -f $ExitCode))
         }
     }
     finally {

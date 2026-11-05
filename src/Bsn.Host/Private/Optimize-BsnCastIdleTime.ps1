@@ -24,20 +24,42 @@ function Optimize-BsnCastIdleTime {
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
     $timestampPattern = '^\[(\d+(?:\.\d+)?)'
 
-    $adjustedLines = [System.Collections.Generic.List[string]]::new()
-    $previousTime = $null
+    $header = ([System.IO.File]::ReadAllLines($Path) | Select-Object -First 1) | ConvertFrom-Json
+    $isVersion3 = ($header.version -eq 3)
 
-    foreach ($castLine in [System.IO.File]::ReadAllLines($Path)) {
-        if ($castLine -match $timestampPattern) {
-            $eventTime = [double]::Parse($Matches[1], $invariantCulture)
-            if (($null -ne $previousTime) -and ((($eventTime - $previousTime) -gt $LimitSec))) {
-                $eventTime = $previousTime + $LimitSec
+    if ($isVersion3) {
+        # v3 files store intervals since the previous event: clamp each interval directly.
+        $adjustedLines = [System.Collections.Generic.List[string]]::new()
+        foreach ($castLine in [System.IO.File]::ReadAllLines($Path)) {
+            if ($castLine -match $timestampPattern) {
+                $interval = [double]::Parse($Matches[1], $invariantCulture)
+                if ($interval -gt $LimitSec) {
+                    $interval = [double]$LimitSec
+                }
+                $adjustedLines.Add([regex]::Replace($castLine, '^\[\d+(?:\.\d+)?', ('[' + $interval.ToString('0.###', $invariantCulture))))
             }
-            $previousTime = $eventTime
-            $adjustedLines.Add([regex]::Replace($castLine, '^\[\d+(?:\.\d+)?', ('[' + $eventTime.ToString('0.######', $invariantCulture))))
+            else {
+                $adjustedLines.Add($castLine)
+            }
         }
-        else {
-            $adjustedLines.Add($castLine)
+    }
+    else {
+        # v2 files store absolute times: recompute each event against the previous event's new time.
+        $adjustedLines = [System.Collections.Generic.List[string]]::new()
+        $previousTime = $null
+
+        foreach ($castLine in [System.IO.File]::ReadAllLines($Path)) {
+            if ($castLine -match $timestampPattern) {
+                $eventTime = [double]::Parse($Matches[1], $invariantCulture)
+                if (($null -ne $previousTime) -and ((($eventTime - $previousTime) -gt $LimitSec))) {
+                    $eventTime = $previousTime + $LimitSec
+                }
+                $previousTime = $eventTime
+                $adjustedLines.Add([regex]::Replace($castLine, '^\[\d+(?:\.\d+)?', ('[' + $eventTime.ToString('0.######', $invariantCulture))))
+            }
+            else {
+                $adjustedLines.Add($castLine)
+            }
         }
     }
 

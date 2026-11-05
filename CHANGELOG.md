@@ -8,6 +8,15 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `-CastVersion <2|3>`: asciicast v3 output per the updated
+  PowerShell-RFC#421 draft (interval-based events at millisecond
+  precision, `term` header object, final `x` exit-status event) alongside
+  v2 (default, widest ecosystem compatibility). Both engines,
+  `Show-InteractiveTranscript` (normalizes v3 intervals to absolute times,
+  skips v3 comment lines) and `Optimize-BsnCastIdleTime` (direct interval
+  clamping for v3) support both versions.
+- `-ShowRecordingIndicator`: optional recording-aware prompt in the nested
+  shell (dot glyph + 'REC PS'), Windows interactive-shell mode only.
 - `Bsn.Host` module (BSN counterpart of Microsoft.PowerShell.Host) with
   `Start-InteractiveTranscript`, which records an interactive terminal
   session - including full-screen TUI applications such as sconfig, vim,

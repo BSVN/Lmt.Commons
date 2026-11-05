@@ -33,6 +33,28 @@ Describe 'Get-BsnCastTimeline' {
         { & (Get-Module -Name 'Bsn.Host') { param($p) Get-BsnCastTimeline -Path $p } $invalidPath } | Should -Throw '*not an asciicast v2*'
     }
 
+    It 'normalizes v3 interval events to absolute times and skips comments' {
+        $v3Path = Join-Path -Path $TestDrive -ChildPath 'v3.cast'
+        @'
+{"version": 3, "term": {"cols": 80, "rows": 24, "type": "xterm-256color"}, "timestamp": 1793895000}
+# a comment line, legal in v3
+[0.1, "o", "first"]
+[0.25, "o", "second"]
+[0.5, "r", "100x40"]
+[0, "x", "0"]
+'@ | Set-Content -LiteralPath $v3Path -NoNewline
+
+        $timeline = & (Get-Module -Name 'Bsn.Host') { param($p) Get-BsnCastTimeline -Path $p } $v3Path
+
+        $timeline.Header.version | Should -Be 3
+        $timeline.Events.Count | Should -Be 4
+        $timeline.Events[0][0] | Should -Be 0.1
+        $timeline.Events[1][0] | Should -Be 0.35
+        $timeline.Events[2][0] | Should -Be 0.85
+        $timeline.Events[2][1] | Should -Be 'r'
+        $timeline.Events[3][1] | Should -Be 'x'
+    }
+
     It 'rejects missing files' {
         { & (Get-Module -Name 'Bsn.Host') { param($p) Get-BsnCastTimeline -Path $p } (Join-Path -Path $TestDrive -ChildPath 'missing.cast') } | Should -Throw '*does not exist*'
     }

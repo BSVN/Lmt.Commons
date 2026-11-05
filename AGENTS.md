@@ -122,7 +122,10 @@ before:
 - The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
   restore the console input mode in `finally`, close the PTY-side pipe
   handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
-  as UTF-8 without BOM with LF line endings. `ConvertTo-BsnAsciicast` and
+  as UTF-8 without BOM with LF line endings. Cast files support asciicast
+  v2 (absolute event times) and v3 (intervals since the previous event,
+  millisecond precision, trailing 'x' exit event) - keep both writers in
+  sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and
   `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
   logic - extend tests there rather than smoke-testing the native engine.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully

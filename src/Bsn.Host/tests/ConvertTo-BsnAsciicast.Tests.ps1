@@ -72,6 +72,35 @@ Describe 'ConvertTo-BsnAsciicast' {
         }
     }
 
+    Context 'asciicast v3 conversion (interval-based events)' {
+        It 'writes the v3 header, delta intervals and the x exit event' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'v3.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'v3.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'v3.cast'
+
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes('helloworld!'))
+            Set-Content -LiteralPath $timingPath -Value "+0.1 5`n+0.25 6" -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -ExitCode 7 -ShellName 'pwsh' } $outputPath $timingPath $castPath
+
+            $castLines = Get-Content -LiteralPath $castPath
+            $header = $castLines[0] | ConvertFrom-Json
+            $header.version | Should -Be 3
+            $header.term.cols | Should -Be 80
+            $header.term.rows | Should -Be 24
+            $header.term.type | Should -Be 'xterm-256color'
+            $header.command | Should -Be 'pwsh'
+
+            $events = @($castLines | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 3
+            # v3 events carry intervals since the previous event, not absolute times.
+            $events[0][0] | Should -Be 0.1
+            $events[1][0] | Should -Be 0.25
+            $events[2][1] | Should -Be 'x'
+            $events[2][2] | Should -Be '7'
+        }
+    }
+
     Context 'file format' {
         It 'writes UTF-8 without BOM and LF line endings' {
             $outputPath = Join-Path -Path $TestDrive -ChildPath 'format.log'

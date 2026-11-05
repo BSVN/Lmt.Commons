@@ -42,4 +42,21 @@ Describe 'Optimize-BsnCastIdleTime' {
         $events[1][0] | Should -Be 5
         $events[2][0] | Should -Be 20
     }
+
+    It 'clamps v3 interval events directly' {
+        $v3Path = Join-Path -Path $TestDrive -ChildPath 'v3idle.cast'
+        @'
+{"version": 3, "term": {"cols": 80, "rows": 24}}
+[0.5, "o", "a"]
+[30, "o", "b"]
+[0.25, "o", "c"]
+'@ | Set-Content -LiteralPath $v3Path -NoNewline
+
+        & (Get-Module -Name 'Bsn.Host') { param($p, $l) Optimize-BsnCastIdleTime -Path $p -LimitSec $l } $v3Path 3
+
+        $events = @(Get-Content -LiteralPath $v3Path | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+        $events[0][0] | Should -Be 0.5
+        $events[1][0] | Should -Be 3
+        $events[2][0] | Should -Be 0.25
+    }
 }
