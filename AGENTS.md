@@ -60,6 +60,9 @@ copying an existing module by hand:
   `PSAvoidUsingComputerNameHardcoded`; suppress per test file with the
   script-level attribute + empty `param()` at the top (see
   `src/Bsn.SystemManagement/tests/Suspend-Computer.Tests.ps1`).
+- Analyzer on C#: keep `src/**/*.cs` warning-free for netstandard2.0
+  (the only target); `dotnet build` runs as part of every build task and
+  fails the pipeline on errors.
 - Keep .ps1/.psm1 files ASCII-only (no em-dashes, curly quotes) to avoid
   encoding/BOM analyzer issues.
 
@@ -81,19 +84,31 @@ before:
 
 ## Module-specific constraints
 
-- `src/Bsn.Host/Private/Start-BsnWindowsPtyRecording.ps1` embeds a C#
-  ConPTY engine compiled via Add-Type. It must stay C# 5 compatible
-  (no string interpolation, no `out var`) because Windows PowerShell 5.1
-  compiles it, must restore the console input mode in `finally`, and the
-  cast writer must emit UTF-8 without BOM with LF line endings.
-  `ConvertTo-BsnAsciicast` is the pure, Pester-tested conversion logic -
-  extend tests there rather than smoke-testing the native engine.
-- `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain
-  fully self-contained (no references to module functions/variables): it is
-  executed locally AND shipped as-is to remote machines via
-  `Invoke-Command -FilePath`. Duplicating tiny helpers inside it is intended.
-  The same self-containment rule applies to `Get-BsnOperatingSystem`, which
-  is deliberately duplicated per module instead of cross-imported.
+- C# interop code lives in real .NET projects, one per module
+  (`src/<Module>/<Module>.csproj`, netstandard2.0, output to
+  `src/<Module>/lib/`), loaded via `RequiredAssemblies` in the manifest.
+  `build.ps1` compiles every csproj with `dotnet build` before any task
+  runs; `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
+  here-strings inside .ps1 files.
+- Shared helpers are factored into `src/Bsn.Common` (required by the other
+  modules via RequiredModules): `Get-BsnOperatingSystem` returns the
+  `BsnOperatingSystem` enum using the native
+  `RuntimeInformation.IsOSPlatform` API with a `$env:OS` fallback for old
+  Windows PowerShell. Do not duplicate it in consumer modules; module
+  loaders prefer the repo sibling during development and fall back to the
+  gallery copy.
+- The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
+  restore the console input mode in `finally`, close the PTY-side pipe
+  handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
+  as UTF-8 without BOM with LF line endings. `ConvertTo-BsnAsciicast` and
+  `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
+  logic - extend tests there rather than smoke-testing the native engine.
+- `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
+  self-contained (it is shipped alone to remote machines via
+  `Invoke-Command -FilePath`, which cannot carry the module's DLL): its
+  small inline P/Invoke copy of SetSuspendState is the one justified
+  exception to the no-embedded-C# rule. Locally, Windows suspend calls the
+  compiled `Bsn.SystemManagement.Interop.PowerProf` assembly instead.
 - Private helper naming: `<ApprovedVerb>-Bsn<Noun>` (e.g. `Get-BsnOperatingSystem`).
 - Every public cmdlet ships three doc artifacts: comment-based help in the
   function (source of truth, renders via Get-Help), `en-US/about_*.help.txt`,

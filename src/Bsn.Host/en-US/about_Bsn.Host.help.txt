@@ -7,16 +7,38 @@ SHORT DESCRIPTION
 
 LONG DESCRIPTION
     The Bsn.Host module is the BSN counterpart of Microsoft.PowerShell.Host:
-    it covers the host/transcript domain. Its first cmdlet,
+    it covers the host/transcript domain. Its main cmdlet,
     Start-InteractiveTranscript, records what Start-Transcript cannot: the
     terminal session itself, including full-screen interactive TUI
     applications such as sconfig, vim, htop or nmtui.
 
-    The recorded command runs inside a pseudo-terminal whose output stream
-    is proxied to the real console and recorded with timestamps into an
-    asciicast v2 (.cast) file that plays back with:
+  START/STOP WORKFLOW
 
-        asciinema play <file>.cast
+    Start-InteractiveTranscript enters a recorded interactive session
+    (a nested shell). Everything run inside it - including TUI
+    applications - is recorded until the session ends:
+
+        Start-InteractiveTranscript
+        <anything, including TUI apps>
+        Stop-InteractiveTranscript      # or 'exit'
+
+    On Windows the recorded shell (pwsh) imports Bsn.Host automatically,
+    so Stop-InteractiveTranscript is available inside the recording. With
+    -Command, recording ends when the command exits; Ctrl+C aborts while
+    keeping the cast file playable (it is written incrementally).
+
+    A module cannot record the OUTER PowerShell session transparently:
+    PowerShell exposes no hook, event or handler for intercepting the
+    host's console I/O at the C# API level - only the host itself can
+    (the subject of PowerShell-RFC#421). The recorded nested session is
+    the closest a gallery module can deliver.
+
+  PLAYBACK
+
+    Show-InteractiveTranscript plays recordings back in the console with
+    original or adjusted timing (-Speed, -IdleTimeLimit). Recordings also
+    play anywhere the open asciicast v2 ecosystem works, for example
+    'asciinema play <file>.cast'.
 
   RECORDING OPTIONS (RFC 421 SEMANTICS)
 
@@ -39,12 +61,17 @@ LONG DESCRIPTION
     and recorded as 'r' events, so full-screen TUI applications that
     re-query the terminal size replay correctly.
 
-  PLATFORM SUPPORT
+  PLATFORM SUPPORT AND REQUIREMENTS
 
-    Windows: ConPTY pseudo-console (requires Windows 10 1809+); optional
-             keystroke recording via -RecordInput.
+    Windows: ConPTY pseudo-console (requires Windows 10 1809 / Server
+             2019+; checked before recording with a clear error).
     Linux:   script(1) with exact timing (util-linux).
     macOS:   script(1) with approximated timestamps (BSD script).
+
+    When the calling process has redirected standard I/O (CI, scripted
+    harnesses), a warning is emitted: Windows may route the recorded
+    process output around the pseudo-console. Run from an interactive
+    console session for full capture.
 
   SCENARIOS
 
@@ -55,17 +82,18 @@ LONG DESCRIPTION
   BACKGROUND
 
     Implements the community request tracked in
-    https://github.com/PowerShell/PowerShell/issues/28353 at the scope a
-    PowerShell Gallery module can deliver. Transparent recording of the
-    entire host session is only possible from inside the host itself; this
-    module instead records a nested session, which captures every child
-    process launched within it, including TUI applications.
+    https://github.com/PowerShell/PowerShell/issues/28353 following the
+    parameter and format semantics of PowerShell-RFC#421 at module scope.
+    The C# ConPTY engine ships as a compiled assembly (lib/Bsn.Host.dll);
+    shared helpers live in the Bsn.Common module.
 
 KEYWORDS
     transcript, recording, terminal, session, asciicast, asciinema, TUI,
-    audit, screencast
+    audit, screencast, playback
 
 SEE ALSO
     Start-InteractiveTranscript
+    Stop-InteractiveTranscript
+    Show-InteractiveTranscript
     Start-Transcript
     Stop-Transcript

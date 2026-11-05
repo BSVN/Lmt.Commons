@@ -81,6 +81,37 @@ foreach ($requiredModule in @('Pester', 'PSScriptAnalyzer')) {
     }
 }
 
+function Invoke-ModuleCompile {
+    [CmdletBinding()]
+    param()
+
+    $projects = Get-ChildItem -Path (Join-Path -Path $repoRoot -ChildPath 'src') -Filter '*.csproj' -Recurse -File -ErrorAction 'SilentlyContinue'
+    if ($projects.Count -eq 0) { return }
+
+    $dotnetCommand = Get-Command -Name 'dotnet' -ErrorAction 'SilentlyContinue'
+    if (-not $dotnetCommand) {
+        # Already-built outputs keep Analyze/Test usable without the SDK.
+        $missingOutputs = @($projects | Where-Object -FilterScript {
+                -not (Test-Path -LiteralPath (Join-Path -Path $_.DirectoryName -ChildPath 'lib'))
+            })
+        if ($missingOutputs.Count -gt 0) {
+            throw ("C# projects found but the .NET SDK was not found on PATH and no built output exists for: {0}. Install the .NET SDK (https://dotnet.microsoft.com/download) or run './build.ps1 -Bootstrap'." -f (($missingOutputs | ForEach-Object -Process { $_.FullName }) -join ', '))
+        }
+        return
+    }
+
+    foreach ($project in $projects) {
+        Write-Host ("==> Compiling {0}" -f $project.BaseName)
+        & $dotnetCommand.Source build $project.FullName --configuration 'Release' --nologo --verbosity 'quiet'
+        if ($LASTEXITCODE -ne 0) {
+            throw ("dotnet build failed for '{0}'." -f $project.FullName)
+        }
+    }
+}
+
+# Compile every module's C# interop project before any task runs.
+Invoke-ModuleCompile
+
 function Get-BuildModule {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -173,7 +204,16 @@ $taskMap = @{
             $pesterConfiguration.Output.Verbosity = 'Detailed'
 
             Write-Host ("==> Testing {0}" -f $module.Name)
-            $result = Invoke-Pester -Configuration $pesterConfiguration
+            # Make repo sibling modules (e.g. Bsn.Common) resolvable for RequiredModules validation.
+            $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
+            $previousModulePath = $env:PSModulePath
+            $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+            try {
+                $result = Invoke-Pester -Configuration $pesterConfiguration
+            }
+            finally {
+                $env:PSModulePath = $previousModulePath
+            }
             if ($result.FailedCount -gt 0) {
                 throw ('{0}: {1} of {2} test(s) failed.' -f $module.Name, $result.FailedCount, $result.TotalCount)
             }
@@ -190,6 +230,9 @@ $taskMap = @{
 
             Copy-Item -Path (Join-Path -Path $module.Path -ChildPath '*') -Destination $stagedModulePath -Recurse -Force
             Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'tests') -Recurse -Force -ErrorAction 'SilentlyContinue'
+            Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'src') -Recurse -Force -ErrorAction 'SilentlyContinue'
+            Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'obj') -Recurse -Force -ErrorAction 'SilentlyContinue'
+            Get-ChildItem -LiteralPath $stagedModulePath -Filter '*.csproj' -File -ErrorAction 'SilentlyContinue' | Remove-Item -Force -ErrorAction 'SilentlyContinue'
 
             $manifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
 

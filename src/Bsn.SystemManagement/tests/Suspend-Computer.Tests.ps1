@@ -3,6 +3,8 @@ param()
 
 BeforeAll {
     $moduleRoot = Split-Path -Parent -Path $PSScriptRoot
+    # Make the repo sibling module Bsn.Common resolvable for RequiredModules validation.
+    $env:PSModulePath = '{0}{1}{2}' -f (Split-Path -Parent -Path $moduleRoot), [System.IO.Path]::PathSeparator, $env:PSModulePath
     $manifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.SystemManagement.psd1'
     Import-Module -Name $manifestPath -Force -ErrorAction 'Stop'
 }

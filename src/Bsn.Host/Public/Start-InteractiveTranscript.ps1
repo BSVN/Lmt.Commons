@@ -10,28 +10,41 @@
     The recorded command runs inside a pseudo-terminal (ConPTY on Windows,
     script(1) on Linux/macOS) whose output stream is proxied to the real
     console and teed, with timestamps, into an asciicast v2 (.cast) file
-    that plays back with 'asciinema play' or any asciicast v2 player.
+    that plays back with Show-InteractiveTranscript, 'asciinema play' or
+    any asciicast v2 player.
 
     Full-screen TUI applications (sconfig, vim, htop, nmtui, ...) are fully
     captured because the recorded process is attached to a real
     pseudo-terminal. Console resizes that happen while recording are
     forwarded to the pseudo-console and recorded as 'r' events.
 
-    When -Command is omitted, an interactive shell is recorded (pwsh if
-    available, otherwise powershell/cmd.exe on Windows, $SHELL on Unix).
-    Recording ends when the recorded process exits.
+    START/STOP WORKFLOW
 
-    Implements the community request tracked in
-    https://github.com/PowerShell/PowerShell/issues/28353 and follows the
-    parameter and format semantics of the corresponding RFC
-    (PowerShell-RFC#421, Terminal Session Recording) at the scope a
-    PowerShell Gallery module can deliver: command-scoped recording rather
-    than transparent whole-host capture (which only the host itself could
-    do). The RFC's alternate-proposal cmdlet name is used.
+    Without -Command, the cmdlet starts a recorded interactive shell
+    (pwsh if available, otherwise powershell/cmd.exe on Windows, $SHELL on
+    Unix). On Windows the nested pwsh auto-imports Bsn.Host, so the
+    Start-Transcript-like workflow is:
+
+        Start-InteractiveTranscript     # enter the recorded session
+        <anything, including TUI apps>  # everything is recorded
+        Stop-InteractiveTranscript      # finalize and return to the outer shell
+
+    Typing 'exit' in the nested shell finalizes the recording as well, and
+    Ctrl+C aborts it while keeping the cast file playable (it is written
+    incrementally). With -Command, recording ends when the command exits.
+
+    What a module cannot do - and why: transparently recording the CURRENT
+    outer PowerShell session (the way Start-Transcript does) would require
+    intercepting the host's console I/O (CONIN$/CONOUT$ on Windows,
+    /dev/tty on Unix). PowerShell exposes no public hook, event or handler
+    for that at the C# API level; only the host process itself can (the
+    subject of PowerShell-RFC#421). The recorded nested session is the
+    closest a PowerShell Gallery module can deliver.
 
 .PARAMETER Command
     The command line to record. When omitted, an interactive shell session
-    is recorded. Recording stops when the command or shell exits.
+    is recorded. Recording stops when the command or shell exits, when
+    Stop-InteractiveTranscript runs inside it, or on Ctrl+C.
 
 .PARAMETER Path
     The asciicast v2 (.cast) file to write. Defaults to
@@ -70,46 +83,42 @@
 .OUTPUTS
     Bsn.Host.InteractiveTranscript
         An object with CastPath, ExitCode (of the recorded process, also
-        propagated to $LASTEXITCODE), DurationSec and VideoPath (the
-        rendered video file, or $null when recording asciicast only or when
-        rendering was skipped).
+        propagated to $LASTEXITCODE), DurationSec, StoppedByRequest and
+        VideoPath (the rendered video file, or $null when recording
+        asciicast only or when rendering was skipped).
+
+.EXAMPLE
+    Start-InteractiveTranscript
+
+    Enters a recorded interactive shell session (Start-Transcript-like
+    workflow). Run Stop-InteractiveTranscript (or 'exit') to finalize.
 
 .EXAMPLE
     Start-InteractiveTranscript -Command 'sconfig'
 
-    Records the full-screen sconfig tool to a cast file in the temporary
-    directory and returns the recording summary.
-
-.EXAMPLE
-    $recording = Start-InteractiveTranscript -Path .\audit\session01.cast
-
-    Records an interactive shell session; type 'exit' in the nested shell
-    to stop recording.
-
-.EXAMPLE
-    Start-InteractiveTranscript -Command 'vim notes.txt' -Path .\notes.cast -Force
-
-    Records a vim session, overwriting any existing cast file. Replay it
-    later with: asciinema play .\notes.cast
+    Records the full-screen sconfig tool; recording ends when it exits.
 
 .EXAMPLE
     Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro -RecordingFormat WebM -RecordIdleTimeLimit 5
 
-    Records nmtui, compresses idle gaps longer than five seconds for
-    watchable playback, and renders a .webm video (requires agg and ffmpeg
-    on PATH; otherwise the .cast file stands alone).
+    Records nmtui, compresses idle gaps longer than five seconds, and
+    renders a .webm video (requires agg and ffmpeg on PATH).
 
 .NOTES
-    The cast file is written incrementally while the session runs. On
-    Windows the ConPTY engine requires Windows 10 1809+; on Unix the
-    script(1) utility is required (timing-exact output on util-linux,
-    approximated timestamps on BSD/macOS in this release).
+    Environment constraints are checked before recording starts and
+    reported explicitly:
+    - Windows requires Windows 10 1809 / Server 2019+ (pseudo-console); on
+      older versions the cmdlet fails with a platform-not-supported error.
+    - Unix requires the script(1) utility on PATH.
+    - When the calling process has redirected standard I/O (CI, scripted
+      harnesses), a warning is emitted: Windows may route the recorded
+      process output around the pseudo-console. Run from an interactive
+      console session for full capture.
+    - Non-console hosts receive a warning that recording may not work.
 
-    Run from an interactive console session. When the calling PowerShell
-    process itself has redirected standard I/O (for example inside CI or
-    when scripted through a harness), Windows may route the recorded
-    process output around the pseudo-console; recording is designed for,
-    and validated in, interactive terminal sessions.
+    Implements https://github.com/PowerShell/PowerShell/issues/28353
+    following the parameter and format semantics of PowerShell-RFC#421 at
+    module scope.
 #>
 function Start-InteractiveTranscript {
     [CmdletBinding(SupportsShouldProcess = $true)]
@@ -132,9 +141,6 @@ function Start-InteractiveTranscript {
 
     process {
         $platform = Get-BsnOperatingSystem
-        if ($platform -eq 'Unknown') {
-            throw ("Interactive transcripts are not supported on this platform ('{0}')." -f $platform)
-        }
 
         if (-not $Path) {
             $Path = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ('InteractiveTranscript_{0}.cast' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -149,6 +155,9 @@ function Start-InteractiveTranscript {
             throw ("The cast file '{0}' already exists. Use -Force to overwrite it." -f $Path)
         }
 
+        # Environment constraint checks with explicit messages (RFC 421 platform contract).
+        Test-BsnRecordingEnvironment -Platform $platform
+
         $resolvedCastPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 
         if (-not $PSCmdlet.ShouldProcess($resolvedCastPath, 'Record interactive terminal session')) {
@@ -162,12 +171,28 @@ function Start-InteractiveTranscript {
             Split-Path -Leaf -Path (Get-BsnDefaultShell)
         }
 
-        if ($platform -eq 'Windows') {
-            $commandLine = Get-BsnRecordingCommandLine -Command $Command
-            $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName
+        # Stop signaling channel: Stop-InteractiveTranscript (running inside the recorded
+        # session) creates this file; the recording engine finalizes and returns.
+        $previousStopFile = $env:BsnHostRecordingStopFile
+        $stopFilePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ('BsnHostRecordingStop_{0}.stop' -f [guid]::NewGuid().ToString('N'))
+        $env:BsnHostRecordingStopFile = $stopFilePath
+
+        try {
+            if ($platform -eq [Bsn.Common.BsnOperatingSystem]::Windows) {
+                $commandLine = Get-BsnRecordingCommandLine -Command $Command
+                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath
+            }
+            else {
+                # Linux and macOS are both Unix: they share the script(1)-based engine,
+                # which picks util-linux (exact timing) or BSD script (approximated) itself.
+                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath
+            }
         }
-        else {
-            $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName
+        finally {
+            $env:BsnHostRecordingStopFile = $previousStopFile
+            if (Test-Path -LiteralPath $stopFilePath) {
+                Remove-Item -LiteralPath $stopFilePath -Force -ErrorAction 'SilentlyContinue'
+            }
         }
 
         if ($RecordIdleTimeLimit -gt 0) {
@@ -183,11 +208,12 @@ function Start-InteractiveTranscript {
         Set-Variable -Name 'LASTEXITCODE' -Scope 'Global' -Value $result.ExitCode
 
         [pscustomobject]@{
-            PSTypeName  = 'Bsn.Host.InteractiveTranscript'
-            CastPath    = $resolvedCastPath
-            ExitCode    = $result.ExitCode
-            DurationSec = [math]::Round($result.DurationSec, 3)
-            VideoPath   = $videoPath
+            PSTypeName       = 'Bsn.Host.InteractiveTranscript'
+            CastPath         = $resolvedCastPath
+            ExitCode         = $result.ExitCode
+            DurationSec      = [math]::Round($result.DurationSec, 3)
+            StoppedByRequest = $result.StoppedByRequest
+            VideoPath        = $videoPath
         }
     }
 }

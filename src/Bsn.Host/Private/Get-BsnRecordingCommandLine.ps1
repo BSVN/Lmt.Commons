@@ -5,8 +5,9 @@
 .DESCRIPTION
     Wraps the recorded command in 'cmd.exe /d /c' so arbitrary command
     lines can be recorded. Without -Command, the default interactive shell
-    (quoted when its path contains spaces) is returned for direct
-    recording.
+    is returned; when that shell is pwsh or powershell, Bsn.Host is
+    auto-imported into the nested session so Stop-InteractiveTranscript is
+    available inside the recording.
 #>
 function Get-BsnRecordingCommandLine {
     [CmdletBinding()]
@@ -21,7 +22,11 @@ function Get-BsnRecordingCommandLine {
 
     $shellPath = Get-BsnDefaultShell
     if ($shellPath -match ' ') {
-        return ('"{0}"' -f $shellPath)
+        $shellPath = '"{0}"' -f $shellPath
+    }
+
+    if ($shellPath -match '(pwsh|powershell)("?)$') {
+        return ('{0} -NoLogo -NoExit -Command "Import-Module Bsn.Host"' -f $shellPath)
     }
 
     return $shellPath

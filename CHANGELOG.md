@@ -28,6 +28,28 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   - `-RecordIdleTimeLimit`: time-compresses long idle gaps for watchable
     playback.
 
+### Changed (review feedback, PR #1)
+
+- C# interop extracted from here-strings into real .NET projects compiled
+  by `dotnet build` (`lib/Bsn.Host.dll`, `lib/Bsn.SystemManagement.dll`),
+  loaded via `RequiredAssemblies`.
+- Shared helpers factored into the new `Bsn.Common` module
+  (`Get-BsnOperatingSystem` returning the `BsnOperatingSystem` enum,
+  native `RuntimeInformation.IsOSPlatform` detection with a fallback for
+  old Windows PowerShell); required by Bsn.Host and Bsn.SystemManagement.
+- `Start-InteractiveTranscript`: Start-Transcript-like workflow - the
+  default recorded shell is pwsh with Bsn.Host auto-imported, and
+  `Stop-InteractiveTranscript` finalizes the recording from inside the
+  session via a stop-signal channel understood by both engines.
+- `Show-InteractiveTranscript`: plays recordings back in the console
+  (`-Speed`, `-IdleTimeLimit`), backed by the pure `Get-BsnCastTimeline`
+  parser.
+- Environment constraints (Windows 10 1809+, script(1) presence, redirected
+  standard I/O, non-console host) are now checked up front with explicit
+  messages.
+- `Invoke-BsnCastRender` gained cross-platform unit tests using fake
+  `agg`/`ffmpeg` shims on PATH.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added

@@ -22,11 +22,12 @@ Describe 'Start-InteractiveTranscript' {
 
     Context 'path handling' {
         BeforeEach {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.5; Completed = $true }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.5; StoppedByRequest = $false; Completed = $true }
             }
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.5; Completed = $true }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.5; StoppedByRequest = $false; Completed = $true }
             }
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
         }
@@ -51,10 +52,14 @@ Describe 'Start-InteractiveTranscript' {
     }
 
     Context 'dispatching to platform engines' {
+        BeforeEach {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
+        }
+
         It 'routes Windows to the ConPTY engine with a wrapped command line' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 7; DurationSec = 2.25; Completed = $true }
+                [pscustomobject]@{ ExitCode = 7; DurationSec = 2.25; StoppedByRequest = $false; Completed = $true }
             }
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' { }
 
@@ -68,7 +73,7 @@ Describe 'Start-InteractiveTranscript' {
         It 'routes Linux to the script(1) engine' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Linux' }
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; Completed = $true }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' { }
 
@@ -80,7 +85,7 @@ Describe 'Start-InteractiveTranscript' {
         It 'propagates the recorded exit code to LASTEXITCODE' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 42; DurationSec = 1.0; Completed = $true }
+                [pscustomobject]@{ ExitCode = 42; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
 
             Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'c.cast')
@@ -90,9 +95,10 @@ Describe 'Start-InteractiveTranscript' {
 
     Context 'recording options (RFC 421 semantics)' {
         BeforeEach {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; Completed = $true }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' { }
         }
@@ -160,8 +166,53 @@ Describe 'Start-InteractiveTranscript' {
         }
     }
 
+    Context 'environment constraint checks' {
+        It 'runs the pre-flight checks before dispatching' {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'env.cast')
+
+            Should -Invoke -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It
+        }
+
+        It 'rejects unknown platforms with an explicit message' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Unknown' }
+
+            { Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'unknown.cast') -ErrorAction 'Stop' } | Should -Throw '*not supported on this platform*'
+        }
+    }
+
+    Context 'stop signaling' {
+        BeforeEach {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $true; Completed = $true }
+            }
+        }
+
+        It 'passes a stop file to the engine and restores the environment afterwards' {
+            $previousValue = $env:BsnHostRecordingStopFile
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'stop.cast')
+
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $StopFilePath -and ($StopFilePath -like '*BsnHostRecordingStop_*.stop') }
+            $env:BsnHostRecordingStopFile | Should -Be $previousValue
+        }
+
+        It 'reports when the recording was stopped by request' {
+            $recording = Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'stop2.cast')
+            $recording.StoppedByRequest | Should -BeTrue
+        }
+    }
+
     Context 'support for -WhatIf' {
         It 'records nothing under -WhatIf' {
+            Mock -CommandName Test-BsnRecordingEnvironment -ModuleName 'Bsn.Host' { }
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' { }
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' { }

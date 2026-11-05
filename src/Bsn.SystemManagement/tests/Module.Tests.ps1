@@ -1,5 +1,7 @@
 BeforeAll {
     $moduleRoot = Split-Path -Parent -Path $PSScriptRoot
+    # Make the repo sibling module Bsn.Common resolvable for RequiredModules validation.
+    $env:PSModulePath = '{0}{1}{2}' -f (Split-Path -Parent -Path $moduleRoot), [System.IO.Path]::PathSeparator, $env:PSModulePath
     $script:ManifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.SystemManagement.psd1'
     Import-Module -Name $script:ManifestPath -Force -ErrorAction 'Stop'
 }
@@ -24,7 +26,8 @@ Describe 'Bsn.SystemManagement module' {
         Test-Path -LiteralPath (Join-Path -Path $moduleRoot -ChildPath 'scripts/Suspend-Action.ps1') | Should -BeTrue
     }
 
-    It 'detects a known local operating system' {
-        & (Get-Module -Name 'Bsn.SystemManagement') { Get-BsnOperatingSystem } | Should -BeIn @('Windows', 'Linux', 'macOS', 'Unknown')
+    It 'detects a known local operating system via Bsn.Common' {
+        Import-Module -Name (Join-Path -Path (Split-Path -Parent -Path $moduleRoot) -ChildPath 'Bsn.Common/Bsn.Common.psd1') -Force
+        @('Windows', 'Linux', 'macOS', 'Unknown') | Should -Contain ([string](Get-BsnOperatingSystem))
     }
 }
