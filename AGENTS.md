@@ -105,20 +105,28 @@ before:
     `using module Bsn.Common` and then use the bare name.
   - NEVER put a bare keyword-type literal inside an attribute in a
     dot-sourced file (e.g. `[OutputType([BsnOperatingSystem])]`):
-    attributes bind at compile time, cannot resolve dynamic enums, and the
-    binding failure poisons the first call of that function. This is the
-    exact bug that originally forced a C# enum; use the string form
-    `[OutputType('BsnOperatingSystem')]` instead.
+    attribute binding happens at compile time and cannot resolve dynamic
+    enums, and the binding failure poisons the first call of that function.
+    This is the exact bug that originally forced a C# enum; use the string
+    form `[OutputType('BsnOperatingSystem')]` instead. Note: attribute
+    binding in CONSUMER modules was observed to be nondeterministic
+    (passes and fails across harnesses with identical shape) - treat it
+    as broken everywhere, not just in the defining module.
   - Bare literals in function bodies DO work cross-module once the
     defining module is loaded - the consumer module loaders import
     Bsn.Common before dot-sourcing function files, so this always holds.
   - Enum PARAM TYPE CONSTRAINTS (e.g. `[BsnOperatingSystem]$Platform`)
     work for real calls but break Pester's `Mock` (CommandMetadata
     generation cannot resolve cross-module dynamic enums) - type such
-    parameters as [string] with a ValidateSet instead.
-  - Avoid `using module Bsn.Common` in consumer files: it resolves the
-    module name through PSModulePath at parse time and breaks when the
-    module was imported by path (dev flows).
+    parameters as [string] with a ValidateSet instead. Falsified fix:
+    registering a type accelerator (`TypeAccelerators::Add('SX', [SX])`)
+    makes the name script-resolvable but does NOT rescue Pester's
+    CommandMetadata cast (verified failing on PS 5.1 and PS 7).
+  - Avoid relying on `using module Bsn.Common` resolving by luck: it
+    resolves the module name through PSModulePath at parse time, so the
+    consumer module loaders self-heal `PSModulePath` (prepend the repo
+    `src` directory when the Bsn.Common sibling exists) BEFORE
+    dot-sourcing function files - keep that self-heal in place.
 - The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
   restore the console input mode in `finally`, close the PTY-side pipe
   handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
