@@ -35,7 +35,9 @@ function ConvertTo-BsnAsciicast {
 
         [int]$Width = 80,
 
-        [int]$Height = 24
+        [int]$Height = 24,
+
+        [string]$ShellName = 'shell'
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
@@ -97,8 +99,8 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
-        $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "env": {{"TERM": "xterm-256color"}}}}' -f `
-                $Width, $Height, $timestamp))
+        $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
+                $Width, $Height, $timestamp, $ShellName))
 
         foreach ($castEvent in $events) {
             $charBuffer = [char[]]::new($castEvent.Count)

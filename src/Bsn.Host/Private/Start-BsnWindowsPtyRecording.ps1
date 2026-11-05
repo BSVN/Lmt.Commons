@@ -5,11 +5,14 @@
 .DESCRIPTION
     Compiles a self-contained C# ConPTY engine (modelled on the EchoCon
     pattern) that:
-    - creates a pseudo-console with two pipes,
+    - creates a pseudo-console with two pipes (the PTY-side ends are closed
+      right after creation because conhost duplicates them - EchoCon pattern),
     - starts the command line attached to it,
     - proxies raw console input into the pseudo-console,
     - tees the pseudo-console's VT output to the real console and, with
       timestamps, into an asciicast v2 file,
+    - resizes the pseudo-console and records 'r' events when the real
+      console is resized while recording (RFC 421 capture pipeline),
     - restores the console input mode when the recorded process exits.
 
     The engine requires Windows 10 1809+ (CreatePseudoConsole).
@@ -24,7 +27,9 @@ function Start-BsnWindowsPtyRecording {
         [Parameter(Mandatory = $true)]
         [string]$CastPath,
 
-        [switch]$RecordInput
+        [switch]$RecordInput,
+
+        [string]$ShellName = 'shell'
     )
 
     if (-not ('Bsn.Host.Interop.PtyRecorder' -as [type])) {
@@ -54,7 +59,6 @@ namespace Bsn.Host.Interop
         private const uint WAIT_TIMEOUT = 258;
         private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = (IntPtr)0x00020016;
         private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
-        private const uint INFINITE = 0xFFFFFFFF;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct COORD
@@ -148,6 +152,9 @@ namespace Bsn.Host.Interop
         private static extern int CreatePseudoConsole(COORD size, IntPtr hInput, IntPtr hOutput, uint dwFlags, out IntPtr phPC);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern int ResizePseudoConsole(IntPtr hPC, COORD size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern void ClosePseudoConsole(IntPtr hPC);
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -180,7 +187,7 @@ namespace Bsn.Host.Interop
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
-        public static RecordingResult Run(string commandLine, string castPath, bool recordInput)
+        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName)
         {
             IntPtr hRealIn = GetStdHandle(STD_INPUT_HANDLE);
             IntPtr hRealOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -250,7 +257,7 @@ namespace Bsn.Host.Interop
                 startupInfo.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
                 startupInfo.lpAttributeList = attributeList;
 
-                cast = new CastWriter(castPath, (int)width, (int)height);
+                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput);
 
                 // Raw VT input so keystrokes (including escape sequences for TUI apps) pass through.
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, ENABLE_VIRTUAL_TERMINAL_INPUT); }
@@ -270,7 +277,30 @@ namespace Bsn.Host.Interop
                 outputThread.Start();
                 inputThread.Start();
 
-                WaitForSingleObject(childProcess, INFINITE);
+                // Wait for the child while forwarding console resizes to the pseudo
+                // console and recording them as 'r' events (RFC 421 capture pipeline).
+                while (true)
+                {
+                    uint waitResult = WaitForSingleObject(childProcess, 250);
+                    if (waitResult == WAIT_OBJECT_0) { break; }
+
+                    CONSOLE_SCREEN_BUFFER_INFO currentInfo;
+                    if (GetConsoleScreenBufferInfo(hRealOut, out currentInfo))
+                    {
+                        short newWidth = (short)(currentInfo.srWindow.Right - currentInfo.srWindow.Left + 1);
+                        short newHeight = (short)(currentInfo.srWindow.Bottom - currentInfo.srWindow.Top + 1);
+                        if (((newWidth != width) || (newHeight != height)) && newWidth > 0 && newHeight > 0)
+                        {
+                            width = newWidth;
+                            height = newHeight;
+                            COORD newSize = new COORD();
+                            newSize.X = width;
+                            newSize.Y = height;
+                            ResizePseudoConsole(pseudoConsole, newSize);
+                            cast.WriteResize(clock.Elapsed.TotalSeconds, (int)width, (int)height);
+                        }
+                    }
+                }
                 state.Stop = true;
 
                 // Closing the pseudo console flushes and closes the output pipe,
@@ -367,31 +397,55 @@ namespace Bsn.Host.Interop
     internal class CastWriter : IDisposable
     {
         private StreamWriter writer;
+        private object sync = new object();
 
-        public CastWriter(string path, int width, int height)
+        public CastWriter(string path, int width, int height, string shellName, bool recordedInput)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
             long timestamp = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+            string title = "Bsn.Host interactive transcript";
+            if (recordedInput)
+            {
+                title = title + " (input captured)";
+            }
             writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
                 + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
                 + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                + ", \"env\": {\"TERM\": \"xterm-256color\"}}");
+                + ", \"title\": \"" + Escape(title) + "\""
+                + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
         }
 
         public void WriteEvent(double seconds, bool isInput, byte[] chunk)
         {
             string text = Escape(Encoding.UTF8.GetString(chunk));
-            writer.WriteLine("[" + seconds.ToString("0.######", CultureInfo.InvariantCulture)
-                + ", \"" + (isInput ? "i" : "o") + "\", \"" + text + "\"]");
+            lock (sync)
+            {
+                if (writer == null) { return; }
+                writer.WriteLine("[" + seconds.ToString("0.######", CultureInfo.InvariantCulture)
+                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + text + "\"]");
+            }
+        }
+
+        public void WriteResize(double seconds, int width, int height)
+        {
+            lock (sync)
+            {
+                if (writer == null) { return; }
+                writer.WriteLine("[" + seconds.ToString("0.######", CultureInfo.InvariantCulture)
+                    + ", \"r\", \"" + width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture) + "\"]");
+            }
         }
 
         public void Dispose()
         {
-            if (writer != null)
+            lock (sync)
             {
-                writer.Dispose();
-                writer = null;
+                if (writer != null)
+                {
+                    writer.Dispose();
+                    writer = null;
+                }
             }
         }
 
@@ -420,12 +474,10 @@ namespace Bsn.Host.Interop
 
     $exitCode = 0
     $durationSec = 0.0
-    $completed = $false
     try {
-        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent)
+        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName)
         $exitCode = $engineResult.ExitCode
         $durationSec = $engineResult.DurationSec
-        $completed = $true
     }
     catch [System.Runtime.InteropServices.EntryPointNotFoundException] {
         throw 'Interactive transcripts on Windows require pseudo-console support (Windows 10 1809 or newer).'
@@ -434,6 +486,6 @@ namespace Bsn.Host.Interop
     return [pscustomobject]@{
         ExitCode    = $exitCode
         DurationSec = $durationSec
-        Completed   = $completed
+        Completed   = $true
     }
 }

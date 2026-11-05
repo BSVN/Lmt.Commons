@@ -13,8 +13,15 @@ the scope a PowerShell Gallery module can deliver.
 
 ```powershell
 Start-InteractiveTranscript [[-Command] <string>] [-Path <string>]
-                             [-RecordInput] [-Force] [-WhatIf] [-Confirm]
+                             [-RecordingFormat <Asciicast|Gif|WebM|Mp4>]
+                             [-RecordIdleTimeLimit <int>] [-RecordInput]
+                             [-Force] [-WhatIf] [-Confirm]
 ```
+
+Parameter names and semantics follow [PowerShell-RFC#421](https://github.com/PowerShell/PowerShell-RFC/pull/421)
+(Terminal Session Recording); the RFC's alternate-proposal cmdlet name is
+used, since the RFC's primary form extends the engine's own
+`Start-Transcript`.
 
 ## How it works
 
@@ -43,10 +50,22 @@ in the nested shell to stop recording.
 - **Command** - the command line to record; defaults to an interactive shell.
 - **Path** - the `.cast` file to write; defaults to
   `InteractiveTranscript_<timestamp>.cast` in the temporary directory.
+- **RecordingFormat** - deliverable format (default `Asciicast`). `Gif`
+  renders via the external [`agg`](https://github.com/asciinema/agg)
+  renderer; `WebM`/`Mp4` additionally transcode via `ffmpeg`. Video files
+  derive their name from `-Path`; when a tool is missing, a warning is
+  emitted and the `.cast` stays complete and valid (RFC degradation
+  contract).
+- **RecordIdleTimeLimit** - seconds; idle gaps longer than the limit are
+  time-compressed for watchable playback. `0` (default) keeps original
+  timing.
 - **RecordInput** - also record keystrokes as `i` events. **Off by default**:
-  captured input includes passwords typed at hidden prompts. Windows only
-  in this release.
+  captured input includes passwords typed at hidden prompts; when enabled
+  the cast header notes it. Windows only in this release.
 - **Force** - overwrite an existing cast file.
+
+Console resizes during recording are forwarded to the pseudo-console and
+recorded as `r` events.
 
 ## Output
 
@@ -62,6 +81,10 @@ Start-InteractiveTranscript -Command 'sconfig'
 # Record an interactive shell session
 $recording = Start-InteractiveTranscript -Path .\audit\session01.cast
 # ... interact, then 'exit' the nested shell ...
+
+# Record with idle compression and a rendered video (needs agg + ffmpeg)
+Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro `
+    -RecordingFormat WebM -RecordIdleTimeLimit 5
 
 # Replay the capture
 asciinema play .\audit\session01.cast

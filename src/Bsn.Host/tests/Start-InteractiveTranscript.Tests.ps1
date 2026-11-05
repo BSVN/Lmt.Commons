@@ -88,6 +88,78 @@ Describe 'Start-InteractiveTranscript' {
         }
     }
 
+    Context 'recording options (RFC 421 semantics)' {
+        BeforeEach {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; Completed = $true }
+            }
+            Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' { }
+        }
+
+        It 'does not render anything for the default Asciicast format' {
+            Mock -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' { '/should/not/happen.gif' }
+
+            $recording = Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'fmt.cast')
+
+            Should -Invoke -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' -Times 0 -Exactly -Scope It
+            $recording.VideoPath | Should -BeNullOrEmpty
+        }
+
+        It 'renders the requested video format after recording' {
+            Mock -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' { '/recordings/demo.webm' }
+
+            $recording = Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'fmt2.cast') -RecordingFormat 'WebM'
+
+            Should -Invoke -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $Format -eq 'WebM' }
+            $recording.VideoPath | Should -Be '/recordings/demo.webm'
+        }
+
+        It 'reports no video path when the renderer is unavailable' {
+            Mock -CommandName Invoke-BsnCastRender -ModuleName 'Bsn.Host' { $null }
+
+            $recording = Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'fmt3.cast') -RecordingFormat 'Gif'
+
+            $recording.VideoPath | Should -BeNullOrEmpty
+        }
+
+        It 'applies the idle time limit after recording' {
+            Mock -CommandName Optimize-BsnCastIdleTime -ModuleName 'Bsn.Host' { }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'idle.cast') -RecordIdleTimeLimit 5
+
+            Should -Invoke -CommandName Optimize-BsnCastIdleTime -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $LimitSec -eq 5 }
+        }
+
+        It 'skips idle time processing for the default limit of zero' {
+            Mock -CommandName Optimize-BsnCastIdleTime -ModuleName 'Bsn.Host' { }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'idle2.cast')
+
+            Should -Invoke -CommandName Optimize-BsnCastIdleTime -ModuleName 'Bsn.Host' -Times 0 -Exactly -Scope It
+        }
+    }
+
+    Context 'rendering degradation (RFC 421 contract)' {
+        It 'keeps the cast authoritative when the renderer is missing' {
+            # 'agg' is not expected on CI images; when it genuinely is present this
+            # test would fail - acceptable, since it proves the happy path instead.
+            $aggCommand = Get-Command -Name 'agg' -ErrorAction 'SilentlyContinue'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'degrade.cast'
+            Set-Content -LiteralPath $castPath -Value '{"version": 2, "width": 80, "height": 24, "timestamp": 1793895000}'
+
+            if ($aggCommand) {
+                Set-ItResult -Skipped -Because 'agg is present on PATH, so the degradation path cannot be exercised.'
+            }
+
+            $renderResult = & (Get-Module -Name 'Bsn.Host') { param($p) Invoke-BsnCastRender -CastPath $p -Format 'Gif' } $castPath
+
+            $renderResult | Should -BeNullOrEmpty
+            (Test-Path -LiteralPath ([System.IO.Path]::ChangeExtension($castPath, 'gif'))) | Should -BeFalse
+            (Get-Item -LiteralPath $castPath).Length | Should -BeGreaterThan 0
+        }
+    }
+
     Context 'support for -WhatIf' {
         It 'records nothing under -WhatIf' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }

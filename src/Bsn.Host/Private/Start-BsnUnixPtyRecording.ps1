@@ -23,7 +23,9 @@ function Start-BsnUnixPtyRecording {
         [Parameter(Mandatory = $true)]
         [string]$CastPath,
 
-        [switch]$RecordInput
+        [switch]$RecordInput,
+
+        [string]$ShellName = 'shell'
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -71,7 +73,7 @@ function Start-BsnUnixPtyRecording {
             $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
             $stopwatch.Stop()
 
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $shellName
         }
         else {
             $rawPath = [System.IO.Path]::GetTempFileName()
@@ -89,7 +91,7 @@ function Start-BsnUnixPtyRecording {
             $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
             $stopwatch.Stop()
 
-            ConvertTo-BsnAsciicast -OutputPath $rawPath -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds
+            ConvertTo-BsnAsciicast -OutputPath $rawPath -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $shellName
         }
     }
     finally {

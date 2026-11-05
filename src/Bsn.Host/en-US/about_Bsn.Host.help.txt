@@ -18,6 +18,27 @@ LONG DESCRIPTION
 
         asciinema play <file>.cast
 
+  RECORDING OPTIONS (RFC 421 SEMANTICS)
+
+    -RecordingFormat selects the deliverable: Asciicast (default, .cast
+    only), Gif (rendered via the external 'agg' renderer), WebM and Mp4
+    (rendered via 'agg', transcoded via 'ffmpeg'). The .cast file is
+    always written and remains the source of truth; when a rendering tool
+    is missing, a warning is emitted and the cast stays complete.
+
+    -RecordIdleTimeLimit compresses idle gaps longer than the limit (in
+    seconds) in the cast timing, keeping long, idle-heavy sessions
+    watchable. Zero (default) preserves original timing.
+
+    -RecordInput additionally records keystrokes as 'i' events (Windows
+    only in this release). It is off by default because it can capture
+    secrets typed at hidden prompts; when enabled, the fact is noted in
+    the cast file header.
+
+    Console resizes during a recording are forwarded to the pseudo console
+    and recorded as 'r' events, so full-screen TUI applications that
+    re-query the terminal size replay correctly.
+
   PLATFORM SUPPORT
 
     Windows: ConPTY pseudo-console (requires Windows 10 1809+); optional
