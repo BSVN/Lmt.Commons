@@ -26,6 +26,20 @@ if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {
     }
 }
 
+# Load the interop assembly through the shared Bsn.Common helper instead of
+# the manifest's RequiredAssemblies: same-version reimports (Import-Module
+# -Force) reuse the loaded assembly, and cross-version reimports (after
+# Update-Module) fail with actionable guidance instead of a raw
+# FileLoadException. https://github.com/BSVN/Lmt.Commons/issues/15
+# Select the NEWEST loaded Bsn.Common: after an Update-Module the session may
+# hold the old gallery copy and the newly required version side by side, and
+# invoking an array of module infos would stringify into a bogus command.
+& (Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1) {
+    param($Path, $AssemblyName)
+
+    Import-BsnInteropAssembly -Path $Path -AssemblyName $AssemblyName
+} (Join-Path -Path $script:ModuleRoot -ChildPath 'lib\Bsn.SystemManagement.dll') 'Bsn.SystemManagement'
+
 # 'using module Bsn.Common' in the function files resolves by name through
 # PSModulePath at parse time - even when the module is already loaded - so make
 # the repo sibling discoverable before those files are dot-sourced.

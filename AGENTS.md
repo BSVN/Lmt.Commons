@@ -88,9 +88,17 @@ before:
 
 - C# interop code lives in real .NET projects, one per module
   (`src/<Module>/<Module>.csproj`, netstandard2.0, output to
-  `src/<Module>/lib/`), loaded via `RequiredAssemblies` in the manifest.
+  `src/<Module>/lib/`). The module loaders load the DLL through the shared
+  private `Import-BsnInteropAssembly` helper in Bsn.Common (invoked from each
+  psm1) - deliberately NOT via `RequiredAssemblies`: same-version reimports
+  (`Import-Module -Force`) reuse the loaded assembly, and cross-version
+  reimports fail with actionable guidance, because PowerShell cannot host two
+  versions of the same assembly in one process (issue #15).
   `build.ps1` compiles every csproj with `dotnet build` before any task
-  runs; `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
+  runs, stamping the assembly version from the module manifest
+  (`-p:Version=<ModuleVersion>`; guard tests assert the equality - all
+  shipped versions must carry distinct assembly versions);
+  `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
   here-strings inside .ps1 files.
 - Shared helpers are factored into `src/Bsn.Common` (required by the other
   modules via RequiredModules, the Az/VMware-style dependency chain):

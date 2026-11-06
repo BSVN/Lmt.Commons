@@ -4,6 +4,51 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.2] - 2026-11-07
+
+### Fixed
+
+- Interop assembly loading is now managed by the module loader (via the
+  shared Bsn.Common helper) instead of the manifest's
+  `RequiredAssemblies`: re-importing with `Import-Module -Force` reuses
+  the already-loaded assembly instead of failing with
+  `FileLoadException`, and importing after `Update-Module` fails with
+  actionable guidance ("restart the session") instead of a raw
+  `FileLoadException`. A session restart is still required to switch
+  assembly versions in one process: PowerShell/.NET cannot host two
+  versions of the same assembly name, so a same-session update is a
+  platform limitation, not a module defect.
+  [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
+- The interop assembly is now stamped with the module version as its
+  `AssemblyVersion` at build time (build.ps1 passes
+  `-p:Version=<ModuleVersion from the psd1>`, which stays the single
+  source of truth). Previously every shipped module version carried the
+  default `AssemblyVersion` 1.0.0.0, so the loader could not tell an
+  already-loaded old version from the same version, silently reusing
+  mismatched interop code. Guard tests in Bsn.Host and
+  Bsn.SystemManagement assert the built DLL version equals the manifest
+  version.
+  [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
+
+## [Bsn.SystemManagement 0.2.1] - 2026-11-07
+
+### Fixed
+
+- Same interop assembly loading change as Bsn.Host 0.2.2 (loader-managed
+  via Bsn.Common 0.1.1, version-stamped assembly).
+  `Suspend-Computer` behavior is unchanged.
+  [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
+
+## [Bsn.Common 0.1.1] - 2026-11-07
+
+### Added
+
+- Private `Import-BsnInteropAssembly` helper used by the Bsn.* module
+  loaders: reuses an already-loaded same-version interop assembly on
+  `Import-Module -Force`, and fails with actionable guidance when a
+  different version is already in the session.
+  [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
+
 ## [Bsn.Host 0.2.1] - 2026-11-07
 
 ### Fixed
