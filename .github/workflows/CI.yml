@@ -22,7 +22,7 @@ jobs:
 
       - name: Install asciinema (Linux cross-check tool)
         if: runner.os == 'Linux'
-        run: pip install asciinema
+        run: pip install --only-binary :all: asciinema==2.4.0
 
       - name: Build console-logger (Windows cross-check tool)
         if: runner.os == 'Windows'
