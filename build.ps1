@@ -26,7 +26,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
-    [ValidateSet('Clean', 'Analyze', 'Test', 'Package', 'Publish')]
+    [ValidateSet('Clean', 'Analyze', 'Test', 'Package', 'Publish', 'Mirror')]
     [string[]]$Task = @('Analyze', 'Test'),
 
     [switch]$Bootstrap,
@@ -37,7 +37,11 @@ param(
 
     [string]$ApiKey,
 
-    [string]$Repository = 'PSGallery'
+    [string]$Repository = 'PSGallery',
+
+    [string]$MirrorRepository,
+
+    [string]$MirrorApiKey
 )
 
 $ErrorActionPreference = 'Stop'
@@ -305,6 +309,59 @@ $taskMap = @{
         }
         finally {
             $env:PSModulePath = $previousModulePath
+        }
+    }
+
+    Mirror = {
+        # Publishes the staged modules to a second NuGet feed (GitHub Packages
+        # mirror). Idempotent: a version that already exists on the feed is a
+        # conflict and is skipped, not an error.
+        if (-not $MirrorRepository) {
+            throw 'No mirror repository was provided. Use -MirrorRepository <nuget-feed-url> (e.g. https://nuget.pkg.github.com/<org>/index.json).'
+        }
+
+        $resolvedMirrorKey = if ($MirrorApiKey) { $MirrorApiKey } else { $env:GITHUB_TOKEN }
+        if (-not $resolvedMirrorKey) {
+            throw 'No mirror API key was provided. Use -MirrorApiKey or set $env:GITHUB_TOKEN.'
+        }
+
+        # GitHub Packages requires authentication even to register the feed;
+        # username is the feed owner (derivable from the URL), password the token.
+        $feedOwner = if ($MirrorRepository -match 'nuget\.pkg\.github\.com/([^/]+)/') { $Matches[1] } else { 'token' }
+        $feedCredential = [pscredential]::new($feedOwner, (ConvertTo-SecureString $resolvedMirrorKey -AsPlainText -Force))
+
+        Register-PSRepository -Name 'BsnMirror' -SourceLocation $MirrorRepository -PublishLocation $MirrorRepository -InstallationPolicy 'Trusted' -Credential $feedCredential -ErrorAction 'Stop'
+
+        # Publish-Module validates the staged manifest including RequiredModules -
+        # make repo siblings resolvable, like the Test/Package tasks do.
+        $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
+        $previousModulePath = $env:PSModulePath
+        $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+        try {
+            foreach ($module in (Get-BuildModule)) {
+                $moduleOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'modules'
+                $stagedModulePath = Join-Path -Path $moduleOutputDirectory -ChildPath $module.Name
+                if (-not (Test-Path -LiteralPath $stagedModulePath)) {
+                    throw ("'{0}' has not been packaged yet. Run the Package task first." -f $stagedModulePath)
+                }
+
+                Write-Host ("==> Mirroring {0} to {1}" -f $module.Name, $MirrorRepository)
+                try {
+                    Publish-Module -Path $stagedModulePath -Repository 'BsnMirror' -NuGetApiKey $resolvedMirrorKey -ErrorAction 'Stop'
+                    Write-Host ("==> {0}: mirrored." -f $module.Name)
+                }
+                catch {
+                    if ($_.Exception.Message -match '409|Conflict|already exist') {
+                        Write-Host ("==> {0}: mirror already has this version; skipping." -f $module.Name)
+                        continue
+                    }
+                    throw
+                }
+            }
+        }
+        finally {
+            $env:PSModulePath = $previousModulePath
+            Unregister-PSRepository -Name 'BsnMirror' -ErrorAction 'SilentlyContinue'
         }
     }
 }

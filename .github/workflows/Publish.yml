@@ -15,6 +15,9 @@ jobs:
   publish:
     name: Package and publish to the PowerShell Gallery
     runs-on: windows-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -40,3 +43,10 @@ jobs:
         env:
           PS_GALLERY_KEY: ${{ secrets.PS_GALLERY_KEY }}
         run: ./build.ps1 -Task Publish
+
+      - name: Mirror modules to GitHub Packages
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./build.ps1 -Task Mirror -MirrorRepository 'https://nuget.pkg.github.com/BSVN/index.json'

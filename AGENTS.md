@@ -43,6 +43,7 @@ copying an existing module by hand:
 ./build.ps1 -Task Test -CodeCoverage                    # + JaCoCo reports (out/coverage.*.xml, CI uploads to Codecov)
 ./build.ps1 -Task Package                                # stages out/modules, zips out/packages
 ./build.ps1 -Task Publish -ApiKey <key>                  # or $env:PS_GALLERY_KEY
+./build.ps1 -Task Mirror -MirrorRepository <feed-url>    # second NuGet feed (GitHub Packages); key via -MirrorApiKey or $env:GITHUB_TOKEN
 ```
 
 - **Quirk when invoking via `pwsh -File`:** `-Task Analyze, Test` splits into
@@ -173,6 +174,12 @@ before:
   re-run). Manual dispatch supports `dry_run`.
 - Gallery auth = `PS_GALLERY_KEY` repo secret (already configured). Never
   put the API key in any repo file, workflow, or commit.
+- Every release also mirrors all modules to GitHub Packages
+  (`nuget.pkg.github.com/BSVN`) via the Mirror task, using the workflow's
+  `GITHUB_TOKEN` with `permissions: packages: write` (packages published
+  this way auto-link to the repository and appear on the org packages
+  page). The Mirror task is idempotent: a 409 conflict means the version
+  already exists and is skipped.
 
 ## Git etiquette
 

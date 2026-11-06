@@ -23,6 +23,20 @@ one command.
 Install-Module -Name Bsn.SystemManagement -Repository PSGallery
 ```
 
+Modules are also mirrored to GitHub Packages
+([org packages](https://github.com/orgs/BSVN/packages)) on every release.
+GitHub Packages requires authentication even for public packages, so the
+gallery remains the primary source; to install from the mirror:
+
+```powershell
+$token = '<github-pat-with-read-packages>'
+Register-PSRepository -Name 'BsnGitHub' `
+    -SourceLocation 'https://nuget.pkg.github.com/bsvn/index.json' `
+    -Credential (New-Object PSCredential $token, (ConvertTo-SecureString $token -AsPlainText -Force)) `
+    -InstallationPolicy Trusted
+Install-Module -Name Bsn.SystemManagement -Repository BsnGitHub
+```
+
 ## The first module: Bsn.SystemManagement
 
 Provides basic system management functionality that PowerShell ships
