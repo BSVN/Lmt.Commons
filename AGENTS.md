@@ -60,6 +60,9 @@ copying an existing module by hand:
   `PSAvoidUsingComputerNameHardcoded`; suppress per test file with the
   script-level attribute + empty `param()` at the top (see
   `src/Bsn.SystemManagement/tests/Suspend-Computer.Tests.ps1`).
+- Analyzer on C#: keep `src/**/*.cs` warning-free for netstandard2.0
+  (the only target); `dotnet build` runs as part of every build task and
+  fails the pipeline on errors.
 - Keep .ps1/.psm1 files ASCII-only (no em-dashes, curly quotes) to avoid
   encoding/BOM analyzer issues.
 
@@ -81,10 +84,78 @@ before:
 
 ## Module-specific constraints
 
-- `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain
-  fully self-contained (no references to module functions/variables): it is
-  executed locally AND shipped as-is to remote machines via
-  `Invoke-Command -FilePath`. Duplicating tiny helpers inside it is intended.
+- C# interop code lives in real .NET projects, one per module
+  (`src/<Module>/<Module>.csproj`, netstandard2.0, output to
+  `src/<Module>/lib/`), loaded via `RequiredAssemblies` in the manifest.
+  `build.ps1` compiles every csproj with `dotnet build` before any task
+  runs; `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
+  here-strings inside .ps1 files.
+- Shared helpers are factored into `src/Bsn.Common` (required by the other
+  modules via RequiredModules, the Az/VMware-style dependency chain):
+  `Get-BsnOperatingSystem` returns the native PowerShell `BsnOperatingSystem`
+  enum using the native `RuntimeInformation.IsOSPlatform` API with an
+  `$env:OS` fallback for old Windows PowerShell. Do not duplicate it in
+  consumer modules; module loaders prefer the repo sibling during development
+  and fall back to the gallery copy.
+- PowerShell keyword types (`enum`/`class`) have empirically verified rules
+  in this repo (bisected on PS 5.1 and PS 7 - see CHANGELOG):
+  - Define the type in the same compilation unit (file) as code that uses
+    it bare: `Bsn.Common.psm1` defines the enum and its function together.
+  - Consumer files that need the type must start with
+    `using module Bsn.Common` and then use the bare name.
+  - NEVER put a bare keyword-type literal inside an attribute in a
+    dot-sourced file (e.g. `[OutputType([BsnOperatingSystem])]`):
+    attribute binding happens at compile time and cannot resolve dynamic
+    enums, and the binding failure poisons the first call of that function.
+    This is the exact bug that originally forced a C# enum; use the string
+    form `[OutputType('BsnOperatingSystem')]` instead. Note: attribute
+    binding in CONSUMER modules was observed to be nondeterministic
+    (passes and fails across harnesses with identical shape) - treat it
+    as broken everywhere, not just in the defining module.
+  - Bare literals in function bodies DO work cross-module once the
+    defining module is loaded - the consumer module loaders import
+    Bsn.Common before dot-sourcing function files, so this always holds.
+  - Native enum PARAM TYPE CONSTRAINTS and Pester's `Mock` - the
+    verified model (both editions, see pester/Pester#3065):
+    - Constraints written as bare names in files whose `using module`
+      header binds them at compile time are fine, INCLUDING under Mock,
+      when mocked with `-ModuleName` into a scope that resolves the enum
+      and invoked module-internally (this repo's shape: -Platform on the
+      mocked Test-BsnRecordingEnvironment uses the real enum).
+    - Mocked from test scope without -ModuleName: the proxy's param block
+      recompiles via [scriptblock]::Create in Pester's scope and the call
+      fails with 'Unable to find type'. Fix: `-RemoveParameterType
+      <Param>` (Pester's built-in switch for exactly this).
+    - A constraint that never bound at compile time (e.g. a
+      module-qualified literal in a dot-sourced file) fails earlier, at
+      Mock setup, inside the CommandMetadata cast.
+    - `using module` at the top of the TEST file does NOT help the proxy;
+      type accelerators do not either.
+    - Repo policy (DRY): enums are native keyword enums in the defining
+      module's psm1 (BsnRecordingFormat in Bsn.Host.psm1, BsnOperatingSystem
+      in Bsn.Common.psm1) - one pattern everywhere. Assembly-backed (C#)
+      enums remain the fallback if a type must survive test-scope mocking
+      without -RemoveParameterType or be referenceable cross-scope.
+  - Avoid relying on `using module Bsn.Common` resolving by luck: it
+    resolves the module name through PSModulePath at parse time, so the
+    consumer module loaders self-heal `PSModulePath` (prepend the repo
+    `src` directory when the Bsn.Common sibling exists) BEFORE
+    dot-sourcing function files - keep that self-heal in place.
+- The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
+  restore the console input mode in `finally`, close the PTY-side pipe
+  handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
+  as UTF-8 without BOM with LF line endings. Cast files support asciicast
+  v2 (absolute event times) and v3 (intervals since the previous event,
+  millisecond precision, trailing 'x' exit event) - keep both writers in
+  sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and
+  `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
+  logic - extend tests there rather than smoke-testing the native engine.
+- `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
+  self-contained (it is shipped alone to remote machines via
+  `Invoke-Command -FilePath`, which cannot carry the module's DLL): its
+  small inline P/Invoke copy of SetSuspendState is the one justified
+  exception to the no-embedded-C# rule. Locally, Windows suspend calls the
+  compiled `Bsn.SystemManagement.Interop.PowerProf` assembly instead.
 - Private helper naming: `<ApprovedVerb>-Bsn<Noun>` (e.g. `Get-BsnOperatingSystem`).
 - Every public cmdlet ships three doc artifacts: comment-based help in the
   function (source of truth, renders via Get-Help), `en-US/about_*.help.txt`,

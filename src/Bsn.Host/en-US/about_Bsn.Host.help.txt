@@ -1,0 +1,109 @@
+TOPIC
+    about_Bsn.Host
+
+SHORT DESCRIPTION
+    Host-level terminal session recording for PowerShell, capturing
+    full-screen TUI applications into replayable asciicast v2 files.
+
+LONG DESCRIPTION
+    The Bsn.Host module is the BSN counterpart of Microsoft.PowerShell.Host:
+    it covers the host/transcript domain. Its main cmdlet,
+    Start-InteractiveTranscript, records what Start-Transcript cannot: the
+    terminal session itself, including full-screen interactive TUI
+    applications such as sconfig, vim, htop or nmtui.
+
+  START/STOP WORKFLOW
+
+    Start-InteractiveTranscript enters a recorded interactive session
+    (a nested shell). Everything run inside it - including TUI
+    applications - is recorded until the session ends:
+
+        Start-InteractiveTranscript
+        <anything, including TUI apps>
+        Stop-InteractiveTranscript      # or 'exit'
+
+    On Windows the recorded shell (pwsh) imports Bsn.Host automatically,
+    so Stop-InteractiveTranscript is available inside the recording. With
+    -Command, recording ends when the command exits; Ctrl+C aborts while
+    keeping the cast file playable (it is written incrementally).
+
+    A module cannot record the OUTER PowerShell session transparently:
+    PowerShell exposes no hook, event or handler for intercepting the
+    host's console I/O at the C# API level - only the host itself can
+    (the subject of PowerShell-RFC#421). The recorded nested session is
+    the closest a gallery module can deliver.
+
+  PLAYBACK
+
+    Show-InteractiveTranscript plays recordings back in the console with
+    original or adjusted timing (-Speed, -IdleTimeLimit). Recordings also
+    play anywhere the open asciicast v2 ecosystem works, for example
+    'asciinema play <file>.cast'.
+
+  RECORDING OPTIONS (RFC 421 SEMANTICS)
+
+    -CastVersion selects the asciicast format version: 2 (default) or 3.
+    Version 3 matches the current RFC 421 draft: events carry intervals
+    since the previous event at millisecond precision, the header carries
+    the terminal size in a term object, and the stream ends with an 'x'
+    exit-status event. Show-InteractiveTranscript reads both versions.
+
+    -ShowRecordingIndicator customizes the nested shell's prompt to show
+    a recording indicator (Windows, interactive shell mode only).
+
+    -RecordingFormat (a BsnRecordingFormat enum: Asciicast, Gif,
+    WebM, Mp4) selects the deliverable: Asciicast (default, .cast
+    only), Gif (rendered via the external 'agg' renderer), WebM and Mp4
+    (rendered via 'agg', transcoded via 'ffmpeg'). The .cast file is
+    always written and remains the source of truth; when a rendering tool
+    is missing, a warning is emitted and the cast stays complete.
+
+    -RecordIdleTimeLimit compresses idle gaps longer than the limit (in
+    seconds) in the cast timing, keeping long, idle-heavy sessions
+    watchable. Zero (default) preserves original timing.
+
+    -RecordInput additionally records keystrokes as 'i' events (Windows
+    only in this release). It is off by default because it can capture
+    secrets typed at hidden prompts; when enabled, the fact is noted in
+    the cast file header.
+
+    Console resizes during a recording are forwarded to the pseudo console
+    and recorded as 'r' events, so full-screen TUI applications that
+    re-query the terminal size replay correctly.
+
+  PLATFORM SUPPORT AND REQUIREMENTS
+
+    Windows: ConPTY pseudo-console (requires Windows 10 1809 / Server
+             2019+; checked before recording with a clear error).
+    Linux:   script(1) with exact timing (util-linux).
+    macOS:   script(1) with approximated timestamps (BSD script).
+
+    When the calling process has redirected standard I/O (CI, scripted
+    harnesses), a warning is emitted: Windows may route the recorded
+    process output around the pseudo-console. Run from an interactive
+    console session for full capture.
+
+  SCENARIOS
+
+    - Audit and compliance records of privileged interactive sessions
+    - Support and incident response: reproduce exactly what was on screen
+    - Training material and shareable session captures
+
+  BACKGROUND
+
+    Implements the community request tracked in
+    https://github.com/PowerShell/PowerShell/issues/28353 following the
+    parameter and format semantics of PowerShell-RFC#421 at module scope.
+    The C# ConPTY engine ships as a compiled assembly (lib/Bsn.Host.dll);
+    shared helpers live in the Bsn.Common module.
+
+KEYWORDS
+    transcript, recording, terminal, session, asciicast, asciinema, TUI,
+    audit, screencast, playback
+
+SEE ALSO
+    Start-InteractiveTranscript
+    Stop-InteractiveTranscript
+    Show-InteractiveTranscript
+    Start-Transcript
+    Stop-Transcript

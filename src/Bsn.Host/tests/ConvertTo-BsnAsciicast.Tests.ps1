@@ -1,0 +1,120 @@
+BeforeAll {
+    $moduleRoot = Split-Path -Parent -Path $PSScriptRoot
+    $manifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.Host.psd1'
+    Import-Module -Name $manifestPath -Force -ErrorAction 'Stop'
+}
+
+Describe 'ConvertTo-BsnAsciicast' {
+    Context 'timing-exact conversion (util-linux script logs)' {
+        BeforeAll {
+            $script:OutputPath = Join-Path -Path $TestDrive -ChildPath 'output.log'
+            $script:TimingPath = Join-Path -Path $TestDrive -ChildPath 'timing.log'
+            $script:CastPath = Join-Path -Path $TestDrive -ChildPath 'session.cast'
+
+            [System.IO.File]::WriteAllBytes($OutputPath, [System.Text.Encoding]::UTF8.GetBytes('helloworld!'))
+            Set-Content -LiteralPath $TimingPath -Value "+0.1 5`n+0.25 6" -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -Width 100 -Height 40 } $OutputPath $TimingPath $CastPath
+
+            $script:CastLines = Get-Content -LiteralPath $CastPath
+        }
+
+        It 'writes the asciicast v2 header with the requested size' {
+            $header = $CastLines[0] | ConvertFrom-Json
+            $header.version | Should -Be 2
+            $header.width | Should -Be 100
+            $header.height | Should -Be 40
+            $header.timestamp | Should -BeGreaterThan 0
+        }
+
+        It 'emits timing-exact output events' {
+            $events = @($CastLines | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 2
+            $events[0][0] | Should -Be 0.1
+            $events[0][1] | Should -Be 'o'
+            $events[0][2] | Should -Be 'hello'
+            $events[1][0] | Should -Be 0.35
+            $events[1][2] | Should -Be 'world!'
+        }
+
+        It 'round-trips special characters through JSON escaping' {
+            $specialOutputPath = Join-Path -Path $TestDrive -ChildPath 'special.log'
+            $specialTimingPath = Join-Path -Path $TestDrive -ChildPath 'special.timing'
+            $specialCastPath = Join-Path -Path $TestDrive -ChildPath 'special.cast'
+
+            $expectedText = 'say "hi"' + [char]10 + [char]9 + 'done'
+            [System.IO.File]::WriteAllBytes($specialOutputPath, [System.Text.Encoding]::UTF8.GetBytes($expectedText))
+            Set-Content -LiteralPath $specialTimingPath -Value '+0.5 14' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $specialOutputPath $specialTimingPath $specialCastPath
+
+            $castEvent = (Get-Content -LiteralPath $specialCastPath | Select-Object -Skip 1 -First 1) | ConvertFrom-Json
+            $castEvent[2] | Should -Be $expectedText
+        }
+    }
+
+    Context 'approximated conversion (BSD script logs)' {
+        It 'spreads line events across the measured duration' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'lines.log'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'lines.cast'
+
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes("alpha`nbeta`ngamma`n"))
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $c) ConvertTo-BsnAsciicast -OutputPath $o -CastPath $c -DurationSec 2.0 } $outputPath $castPath
+
+            $events = @(Get-Content -LiteralPath $castPath | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 3
+            $events[0][0] | Should -Be 0
+            $events[1][0] | Should -Be 1
+            $events[2][0] | Should -Be 2
+            $events[0][2] | Should -Be ("alpha" + [char]10)
+            $events[2][2] | Should -Be ("gamma" + [char]10)
+        }
+    }
+
+    Context 'asciicast v3 conversion (interval-based events)' {
+        It 'writes the v3 header, delta intervals and the x exit event' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'v3.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'v3.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'v3.cast'
+
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes('helloworld!'))
+            Set-Content -LiteralPath $timingPath -Value "+0.1 5`n+0.25 6" -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -ExitCode 7 -ShellName 'pwsh' } $outputPath $timingPath $castPath
+
+            $castLines = Get-Content -LiteralPath $castPath
+            $header = $castLines[0] | ConvertFrom-Json
+            $header.version | Should -Be 3
+            $header.term.cols | Should -Be 80
+            $header.term.rows | Should -Be 24
+            $header.term.type | Should -Be 'xterm-256color'
+            $header.command | Should -Be 'pwsh'
+
+            $events = @($castLines | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 3
+            # v3 events carry intervals since the previous event, not absolute times.
+            $events[0][0] | Should -Be 0.1
+            $events[1][0] | Should -Be 0.25
+            $events[2][1] | Should -Be 'x'
+            $events[2][2] | Should -Be '7'
+        }
+    }
+
+    Context 'file format' {
+        It 'writes UTF-8 without BOM and LF line endings' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'format.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'format.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'format.cast'
+
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes('x'))
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
+
+            $castBytes = [System.IO.File]::ReadAllBytes($castPath)
+            $castBytes[0] | Should -Not -Be 0xEF
+            [System.Text.Encoding]::UTF8.GetString($castBytes).Contains("`r`n") | Should -BeFalse
+        }
+    }
+}

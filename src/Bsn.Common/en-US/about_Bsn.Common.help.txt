@@ -1,0 +1,28 @@
+TOPIC
+    about_Bsn.Common
+
+SHORT DESCRIPTION
+    Shared internal helpers for the Bsn.* module family.
+
+LONG DESCRIPTION
+    Bsn.Common factors the helpers that every Bsn.* module needs so they
+    are implemented exactly once. It currently provides:
+
+    - Get-BsnOperatingSystem: returns the BsnOperatingSystem enum value
+      (Windows, Linux, macOS, Unknown) using the native .NET platform
+      detection API.
+
+    Modules in this repository declare Bsn.Common in RequiredModules and
+    import it in their module loader. It is published to the PowerShell
+    Gallery so dependencies resolve for end users.
+
+    The enum is a native PowerShell enum defined in Bsn.Common.psm1.
+    Code in other modules can use bare [BsnOperatingSystem] literals in
+    function bodies and parameter type constraints once this module is
+    loaded; never place the literal inside an attribute (use the string
+    form [OutputType('BsnOperatingSystem')] instead, because attribute
+    binding cannot resolve dynamic enums).
+
+SEE ALSO
+    Get-BsnOperatingSystem
+    about_Bsn.Host
