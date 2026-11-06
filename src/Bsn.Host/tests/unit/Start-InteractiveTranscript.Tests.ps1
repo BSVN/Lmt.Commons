@@ -73,7 +73,10 @@ Describe 'Start-InteractiveTranscript' {
 
             $recording = Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'a.cast')
 
-            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -like 'cmd.exe /d /c *echo hi*' }
+            # Issue #7 fix: the engine now wraps -Command in pwsh -EncodedCommand
+            # (Base64) instead of cmd.exe /d /c, which mangled metacharacters.
+            # https://github.com/BSVN/Lmt.Commons/issues/7
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -like '*-EncodedCommand*' }
             $recording.ExitCode | Should -Be 7
             $recording.DurationSec | Should -Be 2.25
         }
@@ -212,6 +215,54 @@ Describe 'Start-InteractiveTranscript' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Unknown' }
 
             { Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'unknown.cast') -ErrorAction 'Stop' } | Should -Throw '*not supported on this platform*'
+        }
+
+        It 'throws when both stdin and stdout are redirected on Windows (issue #8)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/8
+            # In CI/test context, both are typically redirected
+            if ([Console]::IsInputRedirected -and [Console]::IsOutputRedirected) {
+                { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Throw '*cannot capture output*'
+            }
+            else {
+                Set-ItResult -Skipped -Because 'requires redirected stdio (CI context).'
+            }
+        }
+
+        It 'warns (not throws) when only one handle is redirected (issue #8)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/8
+            if ([Console]::IsInputRedirected -xor [Console]::IsOutputRedirected) {
+                { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Not -Throw
+            }
+            else {
+                Set-ItResult -Skipped -Because 'requires exactly one redirected handle.'
+            }
+        }
+    }
+
+    Context 'command encoding preserves shell metacharacters (issue #7)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/7
+        It 'uses Base64 encoding instead of cmd.exe /d /c' {
+            $commandLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine -Command 'echo hello' }
+            $commandLine | Should -Not -BeLike '*cmd.exe*'
+            $commandLine | Should -BeLike '*-EncodedCommand*'
+        }
+
+        It 'preserves shell metacharacters through Base64 round-trip' -TestCases @(
+            @{ Original = "Write-Output A | Write-Host -NoNewline 'got: '" }
+            @{ Original = 'Write-Output "hello | world" & more' }
+            @{ Original = 'sort < input.txt > output.txt ^ special' }
+        ) {
+            param($Original)
+
+            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } $Original
+
+            if ($commandLine -match '-EncodedCommand\s+([A-Za-z0-9+/=]+)') {
+                $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
+                $decoded | Should -Be $Original
+            }
+            else {
+                throw "Expected -EncodedCommand in command line but got: $commandLine"
+            }
         }
     }
 

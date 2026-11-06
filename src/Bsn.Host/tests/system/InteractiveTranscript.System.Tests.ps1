@@ -437,6 +437,203 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
         }
     }
 
+    Context 'Issue #5: large multi-byte burst survives without U+FFFD corruption' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
+        It 'records 60000 multi-byte characters with zero U+FFFD in the cast' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
+            }
+
+            # Scenario: write 60000 copies of a 3-byte UTF-8 character (U+2580).
+            # Total: 180KB — far exceeds the 4096-byte read buffer, guaranteeing
+            # many multi-byte sequences span chunk boundaries.
+            $scenarioDir = Join-Path -Path $TestDrive -ChildPath 'utf8-burst'
+            $null = New-Item -ItemType Directory -Path $scenarioDir -Force
+            $scenarioPath = Join-Path -Path $scenarioDir -ChildPath 'scenario-utf8.ps1'
+            @'
+$ErrorActionPreference = 'Stop'
+$blockChar = [string][char]0x2580
+[Console]::Out.Write($blockChar * 60000)
+Write-Output ''
+Write-Output 'UTF8-BURST-DONE'
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'utf8-burst.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            # Parse every event and check for U+FFFD
+            $null = & $script:HostModule { param($p) Get-BsnCastTimeline -Path $p } $castPath
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+
+            # The marker must be present (the recording captured the output)
+            $rawStream.IndexOf('UTF8-BURST-DONE') | Should -BeGreaterThan (-1) -Because 'the burst completion marker must be captured'
+
+            # Count U+FFFD occurrences: must be ZERO
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because ("cast must contain zero U+FFFD replacement characters (found {0}); multi-byte UTF-8 sequences must not be corrupted at chunk boundaries (issue #5)" -f $replacementCount)
+
+            # The multi-byte character must actually be present (not just absent of corruption)
+            $blockCharString = [string][char]0x2580
+            $rawStream.Contains($blockCharString) | Should -BeTrue -Because 'the block character U+2580 must appear in the cast'
+        }
+    }
+
+    Context 'Issue #5: oh-my-posh prompt rendering (real-world multi-byte stress test)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
+        # oh-my-posh renders powerline/nerd-font glyphs (3-4 byte UTF-8 sequences
+        # in the Supplementary Private Use Area). A single prompt with many segments
+        # easily exceeds the 4096-byte read buffer, guaranteeing chunk-boundary
+        # splits mid-glyph. This is the real-world case the issue was filed for.
+        It 'records an oh-my-posh prompt burst with zero U+FFFD in the cast' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'oh-my-posh test is Windows-only (Linux uses vim TUI test instead).'
+            }
+
+            # oh-my-posh must be on PATH (CI installs it; locally: winget install JanDeDobbeleer.OhMyPosh)
+            $ohMyPosh = Get-Command -Name 'oh-my-posh' -ErrorAction 'SilentlyContinue'
+            if (-not $ohMyPosh) {
+                Set-ItResult -Skipped -Because 'oh-my-posh is not on PATH. Install it (winget install JanDeDobbeleer.OhMyPosh) to run this stress test.'
+            }
+
+            # Scenario: render multiple oh-my-posh prompts (each produces multi-byte glyphs)
+            $scenarioDir = Join-Path -Path $TestDrive -ChildPath 'ohmyposh'
+            $null = New-Item -ItemType Directory -Path $scenarioDir -Force
+            $scenarioPath = Join-Path -Path $scenarioDir -ChildPath 'scenario-omp.ps1'
+
+            $themePath = if ($env:POSH_THEMES_PATH) {
+                Join-Path -Path $env:POSH_THEMES_PATH -ChildPath 'atomic.omp.json'
+            } else {
+                # Try a known install location
+                Join-Path -Path "$env:LOCALAPPDATA\Programs\oh-my-posh\themes" -ChildPath 'atomic.omp.json'
+            }
+
+            $themeBlock = if (Test-Path -LiteralPath $themePath) {
+                " --config `"$themePath`""
+            } else {
+                ''  # use the default theme
+            }
+
+            @"
+`$ErrorActionPreference = 'Stop'
+# Render multiple prompts via oh-my-posh print primary (produces the glyph-laden output)
+# Each prompt is typically 200-600 bytes of multi-byte VT sequences
+1..20 | ForEach-Object { oh-my-posh print primary --shell pwsh$themeBlock }
+Write-Output 'OMP-STRESS-DONE'
+"@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'omp-stress.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+
+            # The marker must be present
+            $rawStream.IndexOf('OMP-STRESS-DONE') | Should -BeGreaterThan (-1) -Because 'the oh-my-posh stress test completion marker must be captured'
+
+            # Count U+FFFD occurrences: must be ZERO
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because ("cast must contain zero U+FFFD replacement characters after oh-my-posh prompt rendering (found {0}); nerd-font glyphs must survive chunk boundaries without corruption (issue #5)" -f $replacementCount)
+        }
+    }
+
+    Context 'Issue #5: vim TUI session (hardest Linux TUI case)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
+        # vim is one of the hardest TUI cases: full-screen rendering, alternate
+        # screen buffer, cursor positioning, syntax highlighting, status line,
+        # and multi-byte content. This test validates that the recording captures
+        # a real vim session correctly.
+        It 'records a vim session and captures the TUI content' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if ($script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'vim TUI test is Linux-only (Windows uses oh-my-posh test instead).'
+            }
+            if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+                Set-ItResult -Skipped -Because 'requires an interactive terminal (CI has redirected stdio); run locally.'
+            }
+
+            $vimCommand = Get-Command -Name 'vim' -ErrorAction 'SilentlyContinue'
+            if (-not $vimCommand) {
+                # Try vi as a fallback
+                $vimCommand = Get-Command -Name 'vi' -ErrorAction 'SilentlyContinue'
+            }
+            if (-not $vimCommand) {
+                Set-ItResult -Skipped -Because 'vim/vi is not installed. Install it to run this TUI stress test.'
+            }
+
+            # Create a file with distinctive content for vim to render
+            $contentFile = Join-Path -Path $TestDrive -ChildPath 'vim-content.txt'
+            @'
+VIM-TUI-LINE-1: The quick brown fox
+VIM-TUI-LINE-2: jumps over the lazy dog
+VIM-TUI-LINE-3: pack my box with five dozen liquor jugs
+VIM-TUI-LINE-4: ================================
+VIM-TUI-LINE-5: [SUCCESS] All systems operational
+VIM-TUI-LINE-6: © 2026 UTF-8 test — ¥€£¢
+VIM-TUI-LINE-7: ┌──────────────────────────┐
+VIM-TUI-LINE-8: │ Box-drawing characters  │
+VIM-TUI-LINE-9: └──────────────────────────┘
+'@ | Set-Content -LiteralPath $contentFile -Encoding UTF8
+
+            # Scenario: open vim with the content file, wait briefly, quit
+            # vim enters alt-screen, renders the file with line numbers,
+            # status line, and the content - then exits alt-screen on :q
+            $scenarioDir = Join-Path -Path $TestDrive -ChildPath 'vim-tui'
+            $null = New-Item -ItemType Directory -Path $scenarioDir -Force
+            $scenarioPath = Join-Path -Path $scenarioDir -ChildPath 'scenario-vim.sh'
+
+            $vimScript = @"
+#!/bin/sh
+# Open vim with the content file, auto-quit after loading
+vim -R -c 'sleep 1' -c 'q' '$contentFile' 2>/dev/null || vi -R -c 'q' '$contentFile' 2>/dev/null
+echo 'VIM-TUI-DONE'
+"@
+            $vimScript | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+            $null = & chmod +x $scenarioPath
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'vim-tui.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+            $plainText = Convert-BsnCastPlainText -RawStream $rawStream
+
+            # TUI capture: alternate screen enter/exit must be present
+            $esc = [char]27
+            $rawStream.Contains($esc + '[?1049h') | Should -BeTrue -Because 'vim must enter the alternate screen buffer'
+            $rawStream.Contains($esc + '[?1049l') | Should -BeTrue -Because 'vim must exit the alternate screen buffer'
+
+            # Content capture: vim rendered the file content on screen
+            $plainText.IndexOf('VIM-TUI-LINE-1') | Should -BeGreaterThan (-1) -Because 'vim rendered the first line'
+            $plainText.IndexOf('VIM-TUI-LINE-5') | Should -BeGreaterThan (-1) -Because 'vim rendered the success line'
+
+            # Multi-byte content: the UTF-8 and box-drawing lines must survive
+            $plainText.IndexOf('UTF-8 test') | Should -BeGreaterThan (-1) -Because 'vim rendered multi-byte UTF-8 content'
+            $plainText.IndexOf('Box-drawing') | Should -BeGreaterThan (-1) -Because 'vim rendered box-drawing characters'
+
+            # No corruption
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because ("vim TUI recording must contain zero U+FFFD (found {0}); multi-byte content must survive chunk boundaries (issue #5)" -f $replacementCount)
+        }
+    }
+
     Context 'session with cmdlets and a TUI application' {
         It 'records the session and the cast matches the real view' {
             if (-not $script:CanRunSystemTests) {

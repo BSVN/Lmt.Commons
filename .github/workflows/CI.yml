@@ -46,6 +46,19 @@ jobs:
           }
           Pop-Location
 
+      - name: Install oh-my-posh (Windows multi-byte stress test)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget install JanDeDobbeleer.OhMyPosh --accept-source-agreements --accept-package-agreements --silent
+          $poshPath = "$env:LOCALAPPDATA\Programs\oh-my-posh\bin"
+          if (Test-Path $poshPath) {
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value $poshPath
+            Write-Host "oh-my-posh installed"
+          } else {
+            Write-Warning "oh-my-posh installation failed; stress test will skip"
+          }
+
       - name: Bootstrap development dependencies
         shell: pwsh
         run: ./build.ps1 -Bootstrap
