@@ -125,4 +125,50 @@ Describe 'ConvertTo-BsnAsciicast' {
             [System.Text.Encoding]::UTF8.GetString($castBytes).Contains("`r`n") | Should -BeFalse
         }
     }
+
+    Context 'multi-byte UTF-8 survives chunk boundaries (issue #5)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
+        It 'produces no U+FFFD when multi-byte chars span timing-file chunks' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'utf8.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'utf8.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'utf8.cast'
+
+            $blockElement = [char]0x2580
+            $multiByteString = ($blockElement.ToString() * 100) + 'ASCII text between multi-byte runs ' + ($blockElement.ToString() * 100)
+            $multiByteBytes = [System.Text.Encoding]::UTF8.GetBytes($multiByteString)
+
+            $firstChunkLength = 151
+            [System.IO.File]::WriteAllBytes($outputPath, $multiByteBytes)
+
+            $timingContent = "+0.1 {0}`n+0.1 {1}" -f $firstChunkLength, ($multiByteBytes.Length - $firstChunkLength)
+            Set-Content -LiteralPath $timingPath -Value $timingContent -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
+
+            $castLines = Get-Content -LiteralPath $castPath | Select-Object -Skip 1
+            foreach ($line in $castLines) {
+                $castEvent = $line | ConvertFrom-Json
+                $eventText = $castEvent[2]
+                if ($eventText) {
+                    $eventText.Contains([char]0xFFFD) | Should -BeFalse -Because "event must not contain U+FFFD replacement character"
+                }
+            }
+        }
+    }
+
+    Context 'incremental flush prevents data loss (issue #6)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/6
+        It 'the cast file has content immediately after the header is written' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'flush.log'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'flush.cast'
+            Set-Content -LiteralPath $outputPath -Value 'hello' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $c) ConvertTo-BsnAsciicast -OutputPath $o -CastPath $c -DurationSec 1 } $outputPath $castPath
+
+            $fileInfo = Get-Item -LiteralPath $castPath
+            $fileInfo.Length | Should -BeGreaterThan 0
+            $firstLine = Get-Content -LiteralPath $castPath -TotalCount 1
+            $firstLine | Should -BeLike '*"version"*'
+        }
+    }
 }
