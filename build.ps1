@@ -314,8 +314,13 @@ $taskMap = @{
 
     Mirror = {
         # Publishes the staged modules to a second NuGet feed (GitHub Packages
-        # mirror). Idempotent: a version that already exists on the feed is a
-        # conflict and is skipped, not an error.
+        # mirror) in two steps:
+        #   1. produce .nupkg files by publishing into a LOCAL file-share repository
+        #      (PowerShellGet cannot push to authenticated NuGet v3 feeds directly:
+        #      its provider fetches the service index unauthenticated and gets 401)
+        #   2. dotnet nuget push each .nupkg using a generated nuget.config that
+        #      carries the feed credentials; --skip-duplicate makes re-runs
+        #      idempotent (a version that already exists is skipped)
         if (-not $MirrorRepository) {
             throw 'No mirror repository was provided. Use -MirrorRepository <nuget-feed-url> (e.g. https://nuget.pkg.github.com/<org>/index.json).'
         }
@@ -325,12 +330,13 @@ $taskMap = @{
             throw 'No mirror API key was provided. Use -MirrorApiKey or set $env:GITHUB_TOKEN.'
         }
 
-        # GitHub Packages requires authentication even to register the feed;
-        # username is the feed owner (derivable from the URL), password the token.
+        # GitHub Packages authenticates with the feed owner (from the URL) + token.
         $feedOwner = if ($MirrorRepository -match 'nuget\.pkg\.github\.com/([^/]+)/') { $Matches[1] } else { 'token' }
-        $feedCredential = [pscredential]::new($feedOwner, (ConvertTo-SecureString $resolvedMirrorKey -AsPlainText -Force))
 
-        Register-PSRepository -Name 'BsnMirror' -SourceLocation $MirrorRepository -PublishLocation $MirrorRepository -InstallationPolicy 'Trusted' -Credential $feedCredential -ErrorAction 'Stop'
+        $nupkgDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'nupkg'
+        $null = New-Item -ItemType 'Directory' -Path $nupkgDirectory -Force
+
+        Register-PSRepository -Name 'BsnLocalNupkg' -SourceLocation $nupkgDirectory -PublishLocation $nupkgDirectory -InstallationPolicy 'Trusted' -ErrorAction 'Stop'
 
         # Publish-Module validates the staged manifest including RequiredModules -
         # make repo siblings resolvable, like the Test/Package tasks do.
@@ -345,24 +351,52 @@ $taskMap = @{
                     throw ("'{0}' has not been packaged yet. Run the Package task first." -f $stagedModulePath)
                 }
 
-                Write-Host ("==> Mirroring {0} to {1}" -f $module.Name, $MirrorRepository)
-                try {
-                    Publish-Module -Path $stagedModulePath -Repository 'BsnMirror' -NuGetApiKey $resolvedMirrorKey -ErrorAction 'Stop'
-                    Write-Host ("==> {0}: mirrored." -f $module.Name)
-                }
-                catch {
-                    if ($_.Exception.Message -match '409|Conflict|already exist') {
-                        Write-Host ("==> {0}: mirror already has this version; skipping." -f $module.Name)
-                        continue
-                    }
-                    throw
-                }
+                $stagedManifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
+
+                # Local publish: refresh this module's .nupkg (idempotent overwrite).
+                Get-ChildItem -LiteralPath $nupkgDirectory -Filter ($module.Name + '*.nupkg') -File -ErrorAction 'SilentlyContinue' |
+                    Remove-Item -Force -ErrorAction 'SilentlyContinue'
+
+                Write-Host ("==> Packing {0} {1}" -f $module.Name, $stagedManifest.Version)
+                Publish-Module -Path $stagedModulePath -Repository 'BsnLocalNupkg' -ErrorAction 'Stop'
             }
         }
         finally {
             $env:PSModulePath = $previousModulePath
-            Unregister-PSRepository -Name 'BsnMirror' -ErrorAction 'SilentlyContinue'
+            Unregister-PSRepository -Name 'BsnLocalNupkg' -ErrorAction 'SilentlyContinue'
         }
+
+        # Push each .nupkg with a credentials-carrying nuget.config.
+        $nugetConfigPath = Join-Path -Path $script:OutputDirectory -ChildPath 'nuget.config'
+        $escapedFeed = $MirrorRepository -replace '&', '&amp;'
+        $configContent = @(
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<configuration>'
+            '  <packageSources>'
+            '    <add key="BsnMirror" value="' + $escapedFeed + '" />'
+            '  </packageSources>'
+            '  <packageSourceCredentials>'
+            '    <BsnMirror>'
+            '      <add key="Username" value="' + $feedOwner + '" />'
+            '      <add key="ClearTextPassword" value="' + $resolvedMirrorKey + '" />'
+            '    </BsnMirror>'
+            '  </packageSourceCredentials>'
+            '</configuration>'
+        )
+        $configContent | Set-Content -LiteralPath $nugetConfigPath -Encoding UTF8
+
+        $dotnetCommand = Get-Command -Name 'dotnet' -ErrorAction 'Stop'
+        foreach ($nupkgFile in (Get-ChildItem -LiteralPath $nupkgDirectory -Filter '*.nupkg' -File)) {
+            Write-Host ("==> Mirroring {0} to {1}" -f $nupkgFile.Name, $MirrorRepository)
+            $null = & $dotnetCommand.Source nuget push $nupkgFile.FullName --source 'BsnMirror' --configfile $nugetConfigPath --skip-duplicate
+            if ($LASTEXITCODE -ne 0) {
+                throw ("dotnet nuget push failed for '{0}' (exit code {1})." -f $nupkgFile.Name, $LASTEXITCODE)
+            }
+            Write-Host ("==> {0}: mirrored." -f $nupkgFile.Name)
+        }
+
+        # The generated config carries the token in clear text - remove it.
+        Remove-Item -LiteralPath $nugetConfigPath -Force -ErrorAction 'SilentlyContinue'
     }
 }
 
