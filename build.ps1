@@ -222,26 +222,36 @@ $taskMap = @{
     }
 
     Package = {
-        foreach ($module in (Get-BuildModule)) {
-            $moduleOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'modules'
-            $null = New-Item -ItemType 'Directory' -Path $moduleOutputDirectory -Force
-            $stagedModulePath = Join-Path -Path $moduleOutputDirectory -ChildPath $module.Name
-            $null = New-Item -ItemType 'Directory' -Path $stagedModulePath -Force
+        # Staged manifests validate their RequiredModules (e.g. Bsn.Common) - make
+        # repo siblings resolvable, like the Test task does.
+        $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
+        $previousModulePath = $env:PSModulePath
+        $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+        try {
+            foreach ($module in (Get-BuildModule)) {
+                $moduleOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'modules'
+                $null = New-Item -ItemType 'Directory' -Path $moduleOutputDirectory -Force
+                $stagedModulePath = Join-Path -Path $moduleOutputDirectory -ChildPath $module.Name
+                $null = New-Item -ItemType 'Directory' -Path $stagedModulePath -Force
 
-            Copy-Item -Path (Join-Path -Path $module.Path -ChildPath '*') -Destination $stagedModulePath -Recurse -Force
-            Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'tests') -Recurse -Force -ErrorAction 'SilentlyContinue'
-            Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'src') -Recurse -Force -ErrorAction 'SilentlyContinue'
-            Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'obj') -Recurse -Force -ErrorAction 'SilentlyContinue'
-            Get-ChildItem -LiteralPath $stagedModulePath -Filter '*.csproj' -File -ErrorAction 'SilentlyContinue' | Remove-Item -Force -ErrorAction 'SilentlyContinue'
+                Copy-Item -Path (Join-Path -Path $module.Path -ChildPath '*') -Destination $stagedModulePath -Recurse -Force
+                Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'tests') -Recurse -Force -ErrorAction 'SilentlyContinue'
+                Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'src') -Recurse -Force -ErrorAction 'SilentlyContinue'
+                Remove-Item -LiteralPath (Join-Path -Path $stagedModulePath -ChildPath 'obj') -Recurse -Force -ErrorAction 'SilentlyContinue'
+                Get-ChildItem -LiteralPath $stagedModulePath -Filter '*.csproj' -File -ErrorAction 'SilentlyContinue' | Remove-Item -Force -ErrorAction 'SilentlyContinue'
 
-            $manifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
+                $manifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
 
-            $packageOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'packages'
-            $null = New-Item -ItemType 'Directory' -Path $packageOutputDirectory -Force
-            $packagePath = Join-Path -Path $packageOutputDirectory -ChildPath ('{0}.{1}.zip' -f $module.Name, $manifest.Version)
-            Compress-Archive -Path (Join-Path -Path $stagedModulePath -ChildPath '*') -DestinationPath $packagePath -Force
+                $packageOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'packages'
+                $null = New-Item -ItemType 'Directory' -Path $packageOutputDirectory -Force
+                $packagePath = Join-Path -Path $packageOutputDirectory -ChildPath ('{0}.{1}.zip' -f $module.Name, $manifest.Version)
+                Compress-Archive -Path (Join-Path -Path $stagedModulePath -ChildPath '*') -DestinationPath $packagePath -Force
 
-            Write-Host ("==> {0}: packaged version {1} to {2}" -f $module.Name, $manifest.Version, $packagePath)
+                Write-Host ("==> {0}: packaged version {1} to {2}" -f $module.Name, $manifest.Version, $packagePath)
+            }
+        }
+        finally {
+            $env:PSModulePath = $previousModulePath
         }
     }
 
@@ -251,25 +261,35 @@ $taskMap = @{
             throw 'No PowerShell Gallery API key was provided. Use -ApiKey or set $env:PS_GALLERY_KEY.'
         }
 
-        foreach ($module in (Get-BuildModule)) {
-            $moduleOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'modules'
-            $stagedModulePath = Join-Path -Path $moduleOutputDirectory -ChildPath $module.Name
-            if (-not (Test-Path -LiteralPath $stagedModulePath)) {
-                throw ("'{0}' has not been packaged yet. Run the Package task first." -f $stagedModulePath)
+        # Staged manifests validate their RequiredModules (e.g. Bsn.Common) - make
+        # repo siblings resolvable, like the Test task does.
+        $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
+        $previousModulePath = $env:PSModulePath
+        $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+        try {
+            foreach ($module in (Get-BuildModule)) {
+                $moduleOutputDirectory = Join-Path -Path $script:OutputDirectory -ChildPath 'modules'
+                $stagedModulePath = Join-Path -Path $moduleOutputDirectory -ChildPath $module.Name
+                if (-not (Test-Path -LiteralPath $stagedModulePath)) {
+                    throw ("'{0}' has not been packaged yet. Run the Package task first." -f $stagedModulePath)
+                }
+
+                $manifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
+
+                Write-Host ("==> Checking gallery state for {0}" -f $module.Name)
+                $publishedModule = Find-Module -Name $module.Name -Repository $Repository -ErrorAction 'SilentlyContinue'
+                if ($publishedModule -and ($publishedModule.Version -ge $manifest.Version)) {
+                    Write-Host ("==> {0}: gallery already has version {1}; skipping publish (local: {2})." -f $module.Name, $publishedModule.Version, $manifest.Version)
+                    continue
+                }
+
+                Write-Host ("==> Publishing {0} version {1} to {2}" -f $module.Name, $manifest.Version, $Repository)
+                Publish-Module -Path $stagedModulePath -NuGetApiKey $resolvedApiKey -Repository $Repository -ErrorAction 'Stop'
+                Write-Host ("==> {0}: published." -f $module.Name)
             }
-
-            $manifest = Test-ModuleManifest -Path (Join-Path -Path $stagedModulePath -ChildPath ($module.Name + '.psd1')) -ErrorAction 'Stop'
-
-            Write-Host ("==> Checking gallery state for {0}" -f $module.Name)
-            $publishedModule = Find-Module -Name $module.Name -Repository $Repository -ErrorAction 'SilentlyContinue'
-            if ($publishedModule -and ($publishedModule.Version -ge $manifest.Version)) {
-                Write-Host ("==> {0}: gallery already has version {1}; skipping publish (local: {2})." -f $module.Name, $publishedModule.Version, $manifest.Version)
-                continue
-            }
-
-            Write-Host ("==> Publishing {0} version {1} to {2}" -f $module.Name, $manifest.Version, $Repository)
-            Publish-Module -Path $stagedModulePath -NuGetApiKey $resolvedApiKey -Repository $Repository -ErrorAction 'Stop'
-            Write-Host ("==> {0}: published." -f $module.Name)
+        }
+        finally {
+            $env:PSModulePath = $previousModulePath
         }
     }
 }
