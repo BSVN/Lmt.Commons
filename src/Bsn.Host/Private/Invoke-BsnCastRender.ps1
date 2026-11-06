@@ -25,7 +25,7 @@ function Invoke-BsnCastRender {
         [string]$CastPath,
 
         [Parameter(Mandatory = $true)]
-        [Bsn.Host.BsnRecordingFormat]$Format
+        [BsnRecordingFormat]$Format
     )
 
     $extension = $Format.ToString().ToLowerInvariant()
@@ -37,7 +37,7 @@ function Invoke-BsnCastRender {
         return $null
     }
 
-    if ($Format -eq [Bsn.Host.BsnRecordingFormat]::Gif) {
+    if ($Format -eq [BsnRecordingFormat]::Gif) {
         & $aggCommand.Source $CastPath $videoPath
         if (([int]$LASTEXITCODE -ne 0) -or (-not (Test-Path -LiteralPath $videoPath))) {
             Write-Warning -Message ("agg failed to render '{0}'; the cast file remains the authoritative recording." -f $CastPath)

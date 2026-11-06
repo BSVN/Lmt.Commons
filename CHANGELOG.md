@@ -8,6 +8,11 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `BsnRecordingFormat` consolidated to a native PowerShell enum in
+  `Bsn.Host.psm1` (DRY: one enum pattern repo-wide, no C#/native split):
+  after the corrected Pester model, the native constraint survives this
+  repo's `Mock -ModuleName` + module-internal invocation shape exactly as
+  the C# version did. Names and binding behavior are unchanged.
 - `Test-BsnRecordingEnvironment`'s `-Platform` parameter is now typed as
   the real native `BsnOperatingSystem` enum (the ValidateSet-string
   workaround is gone): a bare constraint bound at compile time via the

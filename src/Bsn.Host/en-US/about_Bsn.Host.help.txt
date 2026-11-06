@@ -51,7 +51,7 @@ LONG DESCRIPTION
     -ShowRecordingIndicator customizes the nested shell's prompt to show
     a recording indicator (Windows, interactive shell mode only).
 
-    -RecordingFormat (a Bsn.Host.BsnRecordingFormat enum: Asciicast, Gif,
+    -RecordingFormat (a BsnRecordingFormat enum: Asciicast, Gif,
     WebM, Mp4) selects the deliverable: Asciicast (default, .cast
     only), Gif (rendered via the external 'agg' renderer), WebM and Mp4
     (rendered via 'agg', transcoded via 'ffmpeg'). The .cast file is

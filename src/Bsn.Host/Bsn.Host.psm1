@@ -12,6 +12,13 @@
 
 Set-StrictMode -Version 'Latest'
 
+enum BsnRecordingFormat {
+    Asciicast
+    Gif
+    WebM
+    Mp4
+}
+
 $script:ModuleRoot = $PSScriptRoot
 
 if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {

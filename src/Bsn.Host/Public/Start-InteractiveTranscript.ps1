@@ -55,8 +55,8 @@ using module Bsn.Common
     is a render product of it (RFC 421).
 
 .PARAMETER RecordingFormat
-    The deliverable format (RFC 421), typed as the Bsn.Host.BsnRecordingFormat
-    enum (accepts the names Asciicast, Gif, WebM, Mp4):
+    The deliverable format (RFC 421), typed as the BsnRecordingFormat enum
+    (accepts the names Asciicast, Gif, WebM, Mp4):
     - Asciicast (default): write only the .cast file.
     - Gif: render an animated GIF via the external 'agg' renderer.
     - WebM / Mp4: render via 'agg' and transcode via 'ffmpeg'.
@@ -151,7 +151,7 @@ function Start-InteractiveTranscript {
 
         [string]$Path,
 
-        [Bsn.Host.BsnRecordingFormat]$RecordingFormat = [Bsn.Host.BsnRecordingFormat]::Asciicast,
+        [BsnRecordingFormat]$RecordingFormat = [BsnRecordingFormat]::Asciicast,
 
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
@@ -234,7 +234,7 @@ function Start-InteractiveTranscript {
         }
 
         $videoPath = $null
-        if ($RecordingFormat -ne [Bsn.Host.BsnRecordingFormat]::Asciicast) {
+        if ($RecordingFormat -ne [BsnRecordingFormat]::Asciicast) {
             $videoPath = Invoke-BsnCastRender -CastPath $resolvedCastPath -Format $RecordingFormat
         }
 

@@ -44,7 +44,7 @@ Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro -RecordingFormat
 ```
 
 - **RecordingFormat** - deliverable format, typed as the
-  `Bsn.Host.BsnRecordingFormat` enum (names `Asciicast`/`Gif`/`WebM`/`Mp4`
+  `BsnRecordingFormat` enum (names `Asciicast`/`Gif`/`WebM`/`Mp4`
   bind exactly like the previous strings; default `Asciicast`).
   `Gif` renders via [`agg`](https://github.com/asciinema/agg), `WebM`/`Mp4`
   additionally transcode via `ffmpeg`; missing tools degrade to a warning

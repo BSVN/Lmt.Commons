@@ -130,8 +130,12 @@ before:
       module-qualified literal in a dot-sourced file) fails earlier, at
       Mock setup, inside the CommandMetadata cast.
     - `using module` at the top of the TEST file does NOT help the proxy;
-      type accelerators do not either. Assembly-backed (C#) enums are
-      always Mock-safe (BsnRecordingFormat in Bsn.Host.csproj).
+      type accelerators do not either.
+    - Repo policy (DRY): enums are native keyword enums in the defining
+      module's psm1 (BsnRecordingFormat in Bsn.Host.psm1, BsnOperatingSystem
+      in Bsn.Common.psm1) - one pattern everywhere. Assembly-backed (C#)
+      enums remain the fallback if a type must survive test-scope mocking
+      without -RemoveParameterType or be referenceable cross-scope.
   - Avoid relying on `using module Bsn.Common` resolving by luck: it
     resolves the module name through PSModulePath at parse time, so the
     consumer module loaders self-heal `PSModulePath` (prepend the repo
