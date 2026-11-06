@@ -115,13 +115,17 @@ before:
   - Bare literals in function bodies DO work cross-module once the
     defining module is loaded - the consumer module loaders import
     Bsn.Common before dot-sourcing function files, so this always holds.
-  - Enum PARAM TYPE CONSTRAINTS (e.g. `[BsnOperatingSystem]$Platform`)
-    work for real calls but break Pester's `Mock` (CommandMetadata
-    generation cannot resolve cross-module dynamic enums) - type such
-    parameters as [string] with a ValidateSet instead. Falsified fix:
-    registering a type accelerator (`TypeAccelerators::Add('SX', [SX])`)
-    makes the name script-resolvable but does NOT rescue Pester's
-    CommandMetadata cast (verified failing on PS 5.1 and PS 7).
+  - Enum PARAM TYPE CONSTRAINTS with NATIVE keyword enums break Pester's
+    `Mock` in EVERY scope - verified experimentally three ways on PS 5.1
+    and PS 7: a type accelerator does not help, `using module` at the top
+    of the test file does not help (Pester builds the proxy in the
+    mocked-into scope, not the test scope), and even an enum defined in
+    the SAME module as the constrained function fails. Assembly-backed
+    (C#) enums are the exception: they are AppDomain-global and Mock-safe
+    (proven in-repo). Consequence: `BsnRecordingFormat` lives in
+    Bsn.Host.csproj and constrains -RecordingFormat/-Format; parameters
+    constrained by Bsn.Common's native enum (e.g. $Platform on the mocked
+    Test-BsnRecordingEnvironment) use [string] + ValidateSet instead.
   - Avoid relying on `using module Bsn.Common` resolving by luck: it
     resolves the module name through PSModulePath at parse time, so the
     consumer module loaders self-heal `PSModulePath` (prepend the repo

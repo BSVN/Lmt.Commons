@@ -8,6 +8,14 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `-RecordingFormat` is now typed as the `Bsn.Host.BsnRecordingFormat`
+  enum (defined in Bsn.Host.csproj, the RFC 421 RecordingOutputFormat
+  shape): assembly-backed so Pester mocks of the renderer stay safe,
+  while names (Asciicast/Gif/WebM/Mp4) still bind exactly as before.
+  Completes the keyword-enum investigation: native-enum param constraints
+  break Pester's Mock in every scope (accelerator, test-file `using
+  module` and same-module placements all falsified on PS 5.1 and PS 7);
+  assembly enums are Mock-safe.
 - `-CastVersion <2|3>`: asciicast v3 output per the updated
   PowerShell-RFC#421 draft (interval-based events at millisecond
   precision, `term` header object, final `x` exit-status event) alongside

@@ -25,11 +25,10 @@ function Invoke-BsnCastRender {
         [string]$CastPath,
 
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Gif', 'WebM', 'Mp4')]
-        [string]$Format
+        [Bsn.Host.BsnRecordingFormat]$Format
     )
 
-    $extension = $Format.ToLowerInvariant()
+    $extension = $Format.ToString().ToLowerInvariant()
     $videoPath = [System.IO.Path]::ChangeExtension($CastPath, $extension)
 
     $aggCommand = Get-Command -Name 'agg' -ErrorAction 'SilentlyContinue'
@@ -38,7 +37,7 @@ function Invoke-BsnCastRender {
         return $null
     }
 
-    if ($Format -eq 'Gif') {
+    if ($Format -eq [Bsn.Host.BsnRecordingFormat]::Gif) {
         & $aggCommand.Source $CastPath $videoPath
         if (([int]$LASTEXITCODE -ne 0) -or (-not (Test-Path -LiteralPath $videoPath))) {
             Write-Warning -Message ("agg failed to render '{0}'; the cast file remains the authoritative recording." -f $CastPath)

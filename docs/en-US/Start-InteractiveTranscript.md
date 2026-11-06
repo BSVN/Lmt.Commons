@@ -43,6 +43,12 @@ Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro.cast -CastVersio
 Start-InteractiveTranscript -Command 'nmtui' -Path .\demo\intro -RecordingFormat WebM -RecordIdleTimeLimit 5
 ```
 
+- **RecordingFormat** - deliverable format, typed as the
+  `Bsn.Host.BsnRecordingFormat` enum (names `Asciicast`/`Gif`/`WebM`/`Mp4`
+  bind exactly like the previous strings; default `Asciicast`).
+  `Gif` renders via [`agg`](https://github.com/asciinema/agg), `WebM`/`Mp4`
+  additionally transcode via `ffmpeg`; missing tools degrade to a warning
+  with the cast intact (RFC degradation contract).
 - **CastVersion** - `2` (default, widest player compatibility) or `3`
   (matches the current RFC 421 draft: per-event intervals at millisecond
   precision, `term` header object, `x` exit event). `Show-InteractiveTranscript`
