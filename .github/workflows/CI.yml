@@ -14,6 +14,8 @@ jobs:
       matrix:
         os: [ windows-latest, ubuntu-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write   # Codecov OIDC token exchange (tokenless default-branch uploads)
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -41,4 +43,4 @@ jobs:
           files: out/coverage.*.xml
           flags: powershell,${{ matrix.os }}
           fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
