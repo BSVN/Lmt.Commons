@@ -53,37 +53,34 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Deterministic pinned install. winget also supports exact versions
-          # (winget install --version plus winget pin), but a direct download
-          # lets the repo pin the artifact's SHA256 (same supply-chain posture
-          # as the SHA-pinned actions) and avoids winget/msstore source flake
-          # on hosted runners. If it cannot be installed the job fails -
-          # never a silent skip.
-          $version = '31.9.1'
-          $expectedHash = 'c2b34d2e8d9db243172170ce4adb70b0bd1476d29d355bc783cfa886724eb27e'
-          $installDir = Join-Path $env:RUNNER_TEMP 'oh-my-posh'
-          $themesDir = Join-Path $installDir 'themes'
-          New-Item -ItemType Directory -Path $themesDir -Force | Out-Null
+          # winget is the idiomatic installer (review decision). The version is
+          # pinned with --version/--exact, and winget verifies the downloaded
+          # installer against the winget-pkgs manifest InstallerSha256 during
+          # install - no manual hash step needed
+          # (https://learn.microsoft.com/en-us/windows/package-manager/winget/hash).
+          # The issue #5 stress test depends on this binary: if the install
+          # fails the job fails - never a silent skip.
+          winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
 
-          $exePath = Join-Path $installDir 'oh-my-posh.exe'
-          Invoke-WebRequest -Uri "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v$version/posh-windows-amd64.exe" -OutFile $exePath
-
-          $actualHash = (certutil -hashfile $exePath SHA256 | Select-Object -Skip 1 -First 1).Trim()
-          if ($actualHash -ne $expectedHash) {
-            throw "oh-my-posh v$version SHA256 mismatch: expected $expectedHash, got $actualHash."
+          # Hard verification: the pinned version must be on disk and execute.
+          $poshBin = "$env:LOCALAPPDATA\Programs\oh-my-posh\bin"
+          $exePath = Join-Path $poshBin 'oh-my-posh.exe'
+          if (-not (Test-Path -LiteralPath $exePath)) {
+            throw "oh-my-posh.exe not found at $exePath after winget install."
           }
-
-          $reported = (& $exePath version)
-          if ($LASTEXITCODE -ne 0 -or -not $reported) {
-            throw "oh-my-posh v$version failed to execute (exit code $LASTEXITCODE)."
+          $reported = ("{0}" -f (& $exePath version)).Trim()
+          if ($LASTEXITCODE -ne 0 -or $reported -ne '31.9.1') {
+            throw "oh-my-posh reported '$reported' (exit $LASTEXITCODE); expected 31.9.1."
           }
-          Write-Host "oh-my-posh $reported installed (SHA256 verified)"
+          Write-Host "oh-my-posh $reported installed via winget"
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $poshBin
 
           # The stress test prefers $env:POSH_THEMES_PATH\atomic.omp.json (a
-          # nerd-font glyph-rich theme); provide it from the same release.
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/v$version/themes/atomic.omp.json" -OutFile (Join-Path $themesDir 'atomic.omp.json')
-
-          Add-Content -LiteralPath $env:GITHUB_PATH -Value $installDir
+          # nerd-font glyph-rich theme); the winget package ships themes.
+          $themesDir = "$env:LOCALAPPDATA\Programs\oh-my-posh\themes"
+          if (-not (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json'))) {
+            throw "atomic.omp.json not found under $themesDir; the stress test expects the winget themes directory."
+          }
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
 
       - name: Bootstrap development dependencies
