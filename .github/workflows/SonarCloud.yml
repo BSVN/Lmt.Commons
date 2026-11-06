@@ -22,7 +22,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # SonarCloud needs full history for SCM/blame data.
           fetch-depth: 0

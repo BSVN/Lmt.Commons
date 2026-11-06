@@ -20,7 +20,7 @@ jobs:
       packages: write
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Bootstrap development dependencies
         shell: pwsh
@@ -31,7 +31,7 @@ jobs:
         run: ./build.ps1 -Task Analyze, Test, Package
 
       - name: Upload module packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: module-packages
           path: out/packages/*.zip

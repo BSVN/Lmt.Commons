@@ -18,7 +18,7 @@ jobs:
       id-token: write   # Codecov OIDC token exchange (tokenless default-branch uploads)
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Bootstrap development dependencies
         shell: pwsh
@@ -29,7 +29,7 @@ jobs:
         run: ./build.ps1 -Task Analyze, Test -CodeCoverage
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}
@@ -37,7 +37,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: always()
         with:
           files: out/coverage.*.xml
