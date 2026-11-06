@@ -1,7 +1,12 @@
 # LMT.Commons — the BSN PowerShell module family
 
 [![CI](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml/badge.svg)](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml)
+[![CodeQL](https://github.com/BSVN/Lmt.Commons/actions/workflows/CodeQL.yml/badge.svg)](https://github.com/BSVN/Lmt.Commons/actions/workflows/CodeQL.yml)
 [![codecov](https://codecov.io/gh/BSVN/Lmt.Commons/branch/main/graph/badge.svg)](https://codecov.io/gh/BSVN/Lmt.Commons)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=BSVN_Lmt.Commons&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=BSVN_Lmt.Commons)
+[![SonarCloud Tech Debt](https://sonarcloud.io/api/project_badges/measure?project=BSVN_Lmt.Commons&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=BSVN_Lmt.Commons)
+[![GitHub release](https://img.shields.io/github/v/release/BSVN/Lmt.Commons)](https://github.com/BSVN/Lmt.Commons/releases/latest)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 This repository is the single home for the **Bsn.* PowerShell modules**
 published to the [PowerShell Gallery](https://www.powershellgallery.com/) —
