@@ -62,26 +62,40 @@ jobs:
           # fails the job fails - never a silent skip.
           winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
 
-          # Hard verification: the pinned version must be on disk and execute.
-          $poshBin = "$env:LOCALAPPDATA\Programs\oh-my-posh\bin"
-          $exePath = Join-Path $poshBin 'oh-my-posh.exe'
-          if (-not (Test-Path -LiteralPath $exePath)) {
-            throw "oh-my-posh.exe not found at $exePath after winget install."
+          # The winget community package is a portable install: the exe lands
+          # under WinGet\Packages with a symlink in WinGet\Links (winget adds
+          # Links to the user PATH registry, but not to this process).
+          # Resolve from the known candidates instead of hardcoding one.
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\oh-my-posh.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\bin\oh-my-posh.exe'),
+            (Join-Path $env:ProgramFiles 'oh-my-posh\bin\oh-my-posh.exe')
+          )
+          $exePath = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $exePath) {
+            throw "oh-my-posh.exe not found in any expected location after winget install: $($candidates -join ', ')"
           }
+
+          # Hard verification: the pinned version must execute.
           $reported = ("{0}" -f (& $exePath version)).Trim()
           if ($LASTEXITCODE -ne 0 -or $reported -ne '31.9.1') {
             throw "oh-my-posh reported '$reported' (exit $LASTEXITCODE); expected 31.9.1."
           }
-          Write-Host "oh-my-posh $reported installed via winget"
-          Add-Content -LiteralPath $env:GITHUB_PATH -Value $poshBin
+          Write-Host "oh-my-posh $reported installed via winget ($exePath)"
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $exePath)
 
-          # The stress test prefers $env:POSH_THEMES_PATH\atomic.omp.json (a
-          # nerd-font glyph-rich theme); the winget package ships themes.
-          $themesDir = "$env:LOCALAPPDATA\Programs\oh-my-posh\themes"
-          if (-not (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json'))) {
-            throw "atomic.omp.json not found under $themesDir; the stress test expects the winget themes directory."
+          # Themes: the portable winget package does not ship them. When a
+          # classic installer layout exists, point the stress test at the
+          # glyph-rich atomic theme; otherwise the test renders the default
+          # theme (which still emits nerd-font multi-byte glyphs).
+          $themesDir = Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\themes'
+          if (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json')) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
+            Write-Host "POSH_THEMES_PATH set; the stress test will use atomic.omp.json"
           }
-          Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
+          else {
+            Write-Host 'No themes directory found; the stress test will render the default theme.'
+          }
 
       - name: Bootstrap development dependencies
         shell: pwsh
