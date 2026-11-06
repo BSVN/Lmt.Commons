@@ -168,6 +168,12 @@ before:
 - CI (`.github/workflows/CI.yml`) runs Analyze+Test on windows/ubuntu/macos
   for every push/PR. Never make tests that actually suspend/sleep a machine —
   all suspend-path tests are mocked.
+- CodeQL (`.github/workflows/CodeQL.yml`) analyzes the C# interop code
+  (manual build mode: the repo has no .sln, so the workflow builds each
+  csproj explicitly) on pushes/PRs to main plus a weekly schedule.
+  CodeQL does not support PowerShell - the PSScriptAnalyzer gate in
+  build.ps1 (Error+Warning severity, which includes the security rules)
+  is the PowerShell-side static analysis.
 - Publishing (`.github/workflows/Publish.yml`) triggers on a **published
   GitHub Release**. It runs the full gate, then publishes every module whose
   manifest version is newer than the gallery version (idempotent, safe to
