@@ -223,8 +223,7 @@ Describe 'Start-InteractiveTranscript' {
             # guard runs before the redirected-stdio check, and on Unix hosts
             # [Environment]::OSVersion.Version is the kernel version (major
             # below 10), so the version error fires instead of the stdio one.
-            $isWindowsHost = ($PSVersionTable.ContainsKey('Platform') -and $PSVersionTable.Platform -eq 'Win32NT') -or ($env:OS -eq 'Windows_NT')
-            if (-not $isWindowsHost) {
+            if ((Get-BsnOperatingSystem) -ne 'Windows') {
                 Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
             }
             # In CI/test context, both are typically redirected
@@ -238,8 +237,7 @@ Describe 'Start-InteractiveTranscript' {
 
         It 'warns (not throws) when only one handle is redirected (issue #8)' {
             # https://github.com/BSVN/Lmt.Commons/issues/8
-            $isWindowsHost = ($PSVersionTable.ContainsKey('Platform') -and $PSVersionTable.Platform -eq 'Win32NT') -or ($env:OS -eq 'Windows_NT')
-            if (-not $isWindowsHost) {
+            if ((Get-BsnOperatingSystem) -ne 'Windows') {
                 Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
             }
             if ([Console]::IsInputRedirected -xor [Console]::IsOutputRedirected) {

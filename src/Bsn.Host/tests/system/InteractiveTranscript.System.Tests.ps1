@@ -18,7 +18,9 @@ BeforeAll {
 
     $script:RepoRoot = Split-Path -Parent -Path (Split-Path -Parent -Path $moduleRoot)
     $script:HostModule = Get-Module -Name 'Bsn.Host'
-    $script:IsWindowsPlatform = ($PSVersionTable.PSVersion.Major -ge 6) -and ($PSVersionTable.ContainsKey('Platform') -and ($PSVersionTable['Platform'] -eq 'Win32NT') -or $env:OS -eq 'Windows_NT')
+    # Bsn.Common (loaded above via Bsn.Host's RequiredModules) owns platform
+    # detection - reuse it instead of duplicating $PSVersionTable/$env:OS logic.
+    $script:IsWindowsPlatform = ($PSVersionTable.PSVersion.Major -ge 6) -and ((Get-BsnOperatingSystem) -eq 'Windows')
     $script:CanRunSystemTests = [bool](Get-Command -Name 'pwsh' -ErrorAction 'SilentlyContinue')
     $script:HasAsciinema = [bool](Get-Command -Name 'asciinema' -ErrorAction 'SilentlyContinue')
     $script:HasTmux = [bool](Get-Command -Name 'tmux' -ErrorAction 'SilentlyContinue')
