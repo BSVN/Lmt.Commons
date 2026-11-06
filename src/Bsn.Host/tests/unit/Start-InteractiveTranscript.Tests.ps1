@@ -219,6 +219,14 @@ Describe 'Start-InteractiveTranscript' {
 
         It 'throws when both stdin and stdout are redirected on Windows (issue #8)' {
             # https://github.com/BSVN/Lmt.Commons/issues/8
+            # Requires a real Windows host: with -Platform Windows the version
+            # guard runs before the redirected-stdio check, and on Unix hosts
+            # [Environment]::OSVersion.Version is the kernel version (major
+            # below 10), so the version error fires instead of the stdio one.
+            $isWindowsHost = ($PSVersionTable.ContainsKey('Platform') -and $PSVersionTable.Platform -eq 'Win32NT') -or ($env:OS -eq 'Windows_NT')
+            if (-not $isWindowsHost) {
+                Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
+            }
             # In CI/test context, both are typically redirected
             if ([Console]::IsInputRedirected -and [Console]::IsOutputRedirected) {
                 { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Throw '*cannot capture output*'
@@ -230,6 +238,10 @@ Describe 'Start-InteractiveTranscript' {
 
         It 'warns (not throws) when only one handle is redirected (issue #8)' {
             # https://github.com/BSVN/Lmt.Commons/issues/8
+            $isWindowsHost = ($PSVersionTable.ContainsKey('Platform') -and $PSVersionTable.Platform -eq 'Win32NT') -or ($env:OS -eq 'Windows_NT')
+            if (-not $isWindowsHost) {
+                Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
+            }
             if ([Console]::IsInputRedirected -xor [Console]::IsOutputRedirected) {
                 { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Not -Throw
             }
