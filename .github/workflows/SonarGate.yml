@@ -1,0 +1,55 @@
+name: SonarCloud Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to check (manual testing).'
+        required: true
+        type: string
+
+jobs:
+  quality-gate:
+    name: SonarCloud quality gate (new code)
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'BSVN_Lmt.Commons' }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    steps:
+      - name: Wait for the analysis, then check the quality gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Poll until SonarCloud publishes the quality-gate result for this PR
+          # (Automatic Analysis typically completes within a couple of minutes;
+          # allow up to ~10 minutes for busy moments).
+          $status = $null
+          for ($i = 0; $i -lt 60; $i++) {
+            $uri = 'https://sonarcloud.io/api/qualitygates/project_status?projectKey={0}&pullRequest={1}' -f $env:PROJECT_KEY, $env:PR_NUMBER
+            $response = Invoke-RestMethod -Uri $uri
+            if ($response.projectStatus.status -and $response.projectStatus.status -ne 'NONE') {
+              $status = $response.projectStatus.status
+              break
+            }
+            Write-Host "Waiting for SonarCloud analysis of PR #$($env:PR_NUMBER) (attempt $($i + 1)/60)..."
+            Start-Sleep -Seconds 10
+          }
+
+          $reportUri = 'https://sonarcloud.io/summary/new_code?id={0}&pullRequest={1}' -f $env:PROJECT_KEY, $env:PR_NUMBER
+          switch ($status) {
+              'OK' {
+                  Write-Host "SonarCloud quality gate PASSED for PR #$($env:PR_NUMBER). Report: $reportUri"
+                  exit 0
+              }
+              'ERROR' {
+                  Write-Host "::error::SonarCloud quality gate FAILED for PR #$($env:PR_NUMBER). Fix the findings before merging. Report: $reportUri"
+                  exit 1
+              }
+              default {
+                  Write-Host "::error::No SonarCloud analysis appeared for PR #$($env:PR_NUMBER) within 10 minutes (last status: '$status'). Verify the project at https://sonarcloud.io (Automatic Analysis must be enabled and the branch pushed)."
+                  exit 1
+              }
+          }

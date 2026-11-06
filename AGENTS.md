@@ -183,6 +183,12 @@ before:
   writable field -> readonly in CastWriter) and S7637 (pin third-party
   actions to full commit SHAs - codecov-action; Dependabot keeps SHA
   pins updated).
+- SonarCloud Gate (`.github/workflows/SonarGate.yml`): on every PR to
+  main, polls the SonarCloud quality-gate API for the PR's new code
+  (public read API, no token) and fails the check if the gate fails or
+  no analysis appears within 10 minutes. Make it (plus the CI matrix
+  and CodeQL checks) a required status check via branch protection to
+  enforce it before merges.
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
   `ci`); dormant nuget entries per csproj for future PackageReferences.
