@@ -177,6 +177,71 @@ $recordingBlock
 }
 
 Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
+    Context 'truth-table cross-check against independent recording sources' {
+        It 'the cast view matches the unrecorded ground truth output' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
+            }
+
+            $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'crosscheck.cast'
+
+            # === SOURCE 1: ground truth (no recording tool at all) ===
+            # Run the scenario with output piped to a file: this IS what the
+            # terminal would show, captured without any recording intermediary.
+            $truthPath = Join-Path -Path $TestDrive -ChildPath 'truth.txt'
+            $null = & pwsh -NoProfile -File $scenarioPath *> $truthPath
+            $truthText = Convert-BsnCastPlainText -RawStream (Get-Content -LiteralPath $truthPath -Raw)
+
+            # === SOURCE 2: recorded by Start-InteractiveTranscript ===
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+            $castPlainText = Convert-BsnCastPlainText -RawStream (Get-BsnCastRawStream -CastPath $castPath)
+
+            # === TRUTH TABLE: the recorded view must contain every marker the ground truth has ===
+            $markers = @(
+                'SYSMARK-A: recorded session start',
+                'SYSMARK-PID: ',
+                'TUI-FRAME: simulated full-screen application',
+                'SYSMARK-B: after TUI exit'
+            )
+
+            foreach ($marker in $markers) {
+                $truthIndex = $truthText.IndexOf($marker)
+                $castIndex = $castPlainText.IndexOf($marker)
+                $truthIndex | Should -BeGreaterThan (-1) -Because ("the ground truth output must contain '{0}'" -f $marker)
+                $castIndex | Should -BeGreaterThan (-1) -Because ("the recorded cast view must contain '{0}' (present in ground truth at index {1})" -f $marker, $truthIndex)
+            }
+
+            # Order preservation: markers must appear in the same sequence in both sources
+            $castIndices = @($markers | ForEach-Object -Process { $castPlainText.IndexOf($_) })
+            for ($i = 1; $i -lt $markers.Count; $i++) {
+                $castIndices[$i] | Should -BeGreaterThan $castIndices[$i - 1] -Because ("marker order must be preserved: '{0}' must come after '{1}'" -f $markers[$i], $markers[$i - 1])
+            }
+
+            # === On Linux: cross-check against a third source (raw script(1)) ===
+            if (-not $script:IsWindowsPlatform) {
+                $scriptLogPath = Join-Path -Path $TestDrive -ChildPath 'script-truth.log'
+                $scriptCommand = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
+                if ($scriptCommand) {
+                    & $scriptCommand.Source -q -c ('pwsh -NoProfile -File ' + $scenarioPath) $scriptLogPath
+                    $scriptText = Convert-BsnCastPlainText -RawStream (Get-Content -LiteralPath $scriptLogPath -Raw)
+
+                    foreach ($marker in $markers) {
+                        $scriptIndex = $scriptText.IndexOf($marker)
+                        $scriptIndex | Should -BeGreaterThan (-1) -Because ("raw script(1) output must also contain '{0}' (three-way agreement)" -f $marker)
+                    }
+                }
+            }
+        }
+    }
+
     Context 'session with cmdlets and a TUI application' {
         It 'records the session and the cast matches the real view' {
             if (-not $script:CanRunSystemTests) {

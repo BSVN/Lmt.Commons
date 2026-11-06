@@ -212,9 +212,10 @@ before:
 ## Git etiquette
 
 - **Never push directly to `main`.** Always create a feature branch, push
-  it, open a PR, wait for the checks (CI matrix, CodeQL, SonarCloud Gate),
-  then merge. Branch protection enforces this, but respect it manually
-  too - even for small changes.
+  it, open a PR, wait for the checks (CI matrix, CodeQL, SonarCloud Gate).
+- **Never merge PRs yourself.** The human reviewer merges manually. The
+  agent creates the PR, verifies checks pass, and reports readiness - the
+  merge button belongs to the human.
 - Branch naming: `feature/<topic>`, `fix/<topic>`, or `chore/<topic>`.
 - Commit locally on the feature branch by default; push the branch and
   open the PR when the work is ready for review.
