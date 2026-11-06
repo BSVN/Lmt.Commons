@@ -405,13 +405,23 @@ namespace Bsn.Host.Interop
         private readonly object sync = new object();
         private int castVersion;
         private double previousElapsed;
+        private Decoder outputDecoder;
+        private Decoder inputDecoder;
 
         public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
+            // AutoFlush: every line (header + events) goes to disk immediately.
+            // Without this, an abnormally terminated recording loses buffered
+            // data - a 0-byte cast or truncated final event (issue #6).
+            writer.AutoFlush = true;
             this.castVersion = castVersion;
             previousElapsed = 0.0;
+            // Persistent decoders: handle multi-byte UTF-8 sequences that span
+            // chunk boundaries without corrupting them to U+FFFD (issue #5).
+            outputDecoder = Encoding.UTF8.GetDecoder();
+            inputDecoder = Encoding.UTF8.GetDecoder();
             long timestamp = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
             string title = "Bsn.Host interactive transcript";
             if (recordedInput)
@@ -454,7 +464,13 @@ namespace Bsn.Host.Interop
 
         public void WriteEvent(double seconds, bool isInput, byte[] chunk)
         {
-            string text = Escape(Encoding.UTF8.GetString(chunk));
+            // Persistent decoder per stream type: multi-byte UTF-8 sequences that
+            // span chunk boundaries are completed by the decoder across calls,
+            // producing complete characters instead of U+FFFD replacement (issue #5).
+            Decoder decoder = isInput ? inputDecoder : outputDecoder;
+            char[] charBuffer = new char[chunk.Length];
+            int charCount = decoder.GetChars(chunk, 0, chunk.Length, charBuffer, 0);
+            string text = Escape(new string(charBuffer, 0, charCount));
             lock (sync)
             {
                 if (writer == null) { return; }

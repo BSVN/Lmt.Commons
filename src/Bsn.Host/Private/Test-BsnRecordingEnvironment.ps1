@@ -41,8 +41,18 @@ function Test-BsnRecordingEnvironment {
         }
     }
 
-    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
-        Write-Warning -Message 'The calling process has redirected standard I/O. The recorded process output may bypass the pseudo-console; run Start-InteractiveTranscript from an interactive console session for full capture.'
+    if ([Console]::IsInputRedirected -and [Console]::IsOutputRedirected) {
+        # Issue #8: on Windows, when BOTH stdin and stdout are redirected, the
+        # child process's output bypasses the pseudo console entirely (routed to
+        # the caller's pipes), producing an empty but valid-looking cast.
+        # There is no meaningful interactive recording in this shape - error
+        # with guidance rather than silently produce a useless recording.
+        if ($Platform -eq [BsnOperatingSystem]::Windows) {
+            throw 'Interactive transcripts cannot capture output when both stdin and stdout are redirected on Windows: the recorded process bypasses the pseudo console and the cast would be empty. Run Start-InteractiveTranscript from a real console session, or from a host with at least one interactive standard handle.'
+        }
+    }
+    elseif ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+        Write-Warning -Message 'The calling process has partially redirected standard I/O. The recorded process output may bypass the pseudo-console; run Start-InteractiveTranscript from an interactive console session for full capture.'
     }
 
     if ($Host.Name -ne 'ConsoleHost') {

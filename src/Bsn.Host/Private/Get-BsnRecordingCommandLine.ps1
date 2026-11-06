@@ -3,13 +3,16 @@
     Builds the Windows process command line used for a recording.
 
 .DESCRIPTION
-    Wraps the recorded command in 'cmd.exe /d /c' so arbitrary command
-    lines can be recorded. Without -Command, the default interactive shell
-    is returned; when that shell is pwsh or powershell, Bsn.Host is
-    auto-imported into the nested session so Stop-InteractiveTranscript is
-    available inside the recording. With -ShowRecordingIndicator, the
-    nested session additionally gets a recording-aware prompt
-    ([char]0x23FA + ' REC PS <path>> ').
+    When -Command is given, the command is wrapped in pwsh -EncodedCommand
+    (Base64-encoded UTF-16LE) instead of cmd.exe /d /c. This avoids all
+    cmd.exe metacharacter issues (|, &, <, >, ^, quotes) that mangle the
+    recorded command (issue #7): the exact command text is preserved
+    bit-for-bit through the encoding.
+
+    Without -Command, the default interactive shell is returned; when that
+    shell is pwsh or powershell, Bsn.Host is auto-imported into the nested
+    session so Stop-InteractiveTranscript is available inside the recording,
+    and the recording-aware prompt is installed when requested.
 #>
 function Get-BsnRecordingCommandLine {
     [CmdletBinding()]
@@ -21,7 +24,14 @@ function Get-BsnRecordingCommandLine {
     )
 
     if ($Command) {
-        return ('cmd.exe /d /c "{0}"' -f $Command)
+        # Base64-encode the command to survive the CreateProcess command line
+        # without any shell metacharacter interpretation (issue #7).
+        $shellPath = Get-BsnDefaultShell
+        if ($shellPath -match ' ') {
+            $shellPath = '"{0}"' -f $shellPath
+        }
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
+        return ('{0} -NoProfile -EncodedCommand {1}' -f $shellPath, $encoded)
     }
 
     $shellPath = Get-BsnDefaultShell

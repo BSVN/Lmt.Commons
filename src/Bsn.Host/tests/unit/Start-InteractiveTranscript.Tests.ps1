@@ -73,7 +73,7 @@ Describe 'Start-InteractiveTranscript' {
 
             $recording = Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'a.cast')
 
-            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -like 'cmd.exe /d /c *echo hi*' }
+            Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -like '*-EncodedCommand*' }
             $recording.ExitCode | Should -Be 7
             $recording.DurationSec | Should -Be 2.25
         }

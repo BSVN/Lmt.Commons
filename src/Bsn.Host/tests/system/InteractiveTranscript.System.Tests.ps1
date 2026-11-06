@@ -437,6 +437,53 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
         }
     }
 
+    Context 'Issue #5: large multi-byte burst survives without U+FFFD corruption' {
+        It 'records 60000 multi-byte characters with zero U+FFFD in the cast' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
+            }
+
+            # Scenario: write 60000 copies of a 3-byte UTF-8 character (U+2580).
+            # Total: 180KB — far exceeds the 4096-byte read buffer, guaranteeing
+            # many multi-byte sequences span chunk boundaries.
+            $scenarioDir = Join-Path -Path $TestDrive -ChildPath 'utf8-burst'
+            $null = New-Item -ItemType Directory -Path $scenarioDir -Force
+            $scenarioPath = Join-Path -Path $scenarioDir -ChildPath 'scenario-utf8.ps1'
+            @'
+$ErrorActionPreference = 'Stop'
+$blockChar = [string][char]0x2580
+[Console]::Out.Write($blockChar * 60000)
+Write-Output ''
+Write-Output 'UTF8-BURST-DONE'
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'utf8-burst.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            # Parse every event and check for U+FFFD
+            $null = & $script:HostModule { param($p) Get-BsnCastTimeline -Path $p } $castPath
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+
+            # The marker must be present (the recording captured the output)
+            $rawStream.IndexOf('UTF8-BURST-DONE') | Should -BeGreaterThan (-1) -Because 'the burst completion marker must be captured'
+
+            # Count U+FFFD occurrences: must be ZERO
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because ("cast must contain zero U+FFFD replacement characters (found {0}); multi-byte UTF-8 sequences must not be corrupted at chunk boundaries (issue #5)" -f $replacementCount)
+
+            # The multi-byte character must actually be present (not just absent of corruption)
+            $blockCharString = [string][char]0x2580
+            $rawStream.Contains($blockCharString) | Should -BeTrue -Because 'the block character U+2580 must appear in the cast'
+        }
+    }
+
     Context 'session with cmdlets and a TUI application' {
         It 'records the session and the cast matches the real view' {
             if (-not $script:CanRunSystemTests) {
