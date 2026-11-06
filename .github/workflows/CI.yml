@@ -62,43 +62,43 @@ jobs:
           # fails the job fails - never a silent skip.
           winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
 
-          # The winget package is an MSIX (ohmyposh.cli): the executable is
-          # exposed through the app execution alias in WindowsApps. Keep the
-          # other layouts as candidates in case the manifest changes shape.
-          $candidates = @(
-            (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\oh-my-posh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\oh-my-posh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\bin\oh-my-posh.exe')
-          )
-          $exePath = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if (-not $exePath) {
-            throw "oh-my-posh.exe not found in any expected location after winget install: $($candidates -join ', ')"
+          # The winget package is an MSIX (ohmyposh.cli). Its public entry
+          # point is the app execution alias in WindowsApps - a reparse point
+          # that fails to execute from pwsh under redirected stdio on hosted
+          # runners ("StandardOutputEncoding is only supported when standard
+          # output is redirected"). Resolve the REAL package binary via
+          # Get-AppxPackage and use it for verification and PATH.
+          $appx = Get-AppxPackage -Name 'ohmyposh.cli' -ErrorAction Stop
+          if (-not $appx) {
+            throw 'ohmyposh.cli package not found after winget install.'
+          }
+          if ($appx.Version -ne '31.9.1.0') {
+            throw "oh-my-posh package version $($appx.Version) installed; expected 31.9.1.0."
           }
 
-          # Hard verification: the pinned version must execute.
-          $reported = ("{0}" -f (& $exePath version)).Trim()
+          $packageExe = Join-Path $appx.InstallLocation 'oh-my-posh.exe'
+          if (-not (Test-Path -LiteralPath $packageExe)) {
+            throw "oh-my-posh.exe not found inside the package at $packageExe."
+          }
+
+          # Hard verification: the binary must execute and report the pinned version.
+          $reported = ("{0}" -f (& $packageExe version)).Trim()
           if ($LASTEXITCODE -ne 0 -or $reported -ne '31.9.1') {
             throw "oh-my-posh reported '$reported' (exit $LASTEXITCODE); expected 31.9.1."
           }
-          Write-Host "oh-my-posh $reported installed via winget ($exePath)"
-          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $exePath)
+          Write-Host "oh-my-posh $reported installed via winget ($packageExe)"
+
+          # GITHUB_PATH is prepended, so 'oh-my-posh' resolves to the package
+          # binary, not the WindowsApps alias reparse point.
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $appx.InstallLocation
 
           # The MSIX ships the themes inside the package directory; point the
-          # stress test at the glyph-rich atomic theme when resolvable. Any
-          # miss falls back to the default theme (still nerd-font multi-byte).
-          $themeCandidates = @()
-          try {
-            $appx = Get-AppxPackage -Name 'ohmyposh.cli' -ErrorAction Stop
-            if ($appx) { $themeCandidates += (Join-Path $appx.InstallLocation 'themes') }
-          }
-          catch {
-            Write-Verbose "Get-AppxPackage unavailable: $($_.Exception.Message)"
-          }
-          $themeCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\themes')
-          $themesDir = $themeCandidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'atomic.omp.json') } | Select-Object -First 1
-          if ($themesDir) {
+          # stress test at the glyph-rich atomic theme when present (it falls
+          # back to the default theme, which still renders nerd-font glyphs).
+          $themesDir = Join-Path $appx.InstallLocation 'themes'
+          if (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json')) {
             Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
-            Write-Host "POSH_THEMES_PATH set; the stress test will use atomic.omp.json"
+            Write-Host 'POSH_THEMES_PATH set; the stress test will use atomic.omp.json'
           }
           else {
             Write-Host 'No themes directory found; the stress test will render the default theme.'
