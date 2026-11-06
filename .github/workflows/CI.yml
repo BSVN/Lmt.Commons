@@ -22,7 +22,10 @@ jobs:
 
       - name: Install asciinema (Linux cross-check tool)
         if: runner.os == 'Linux'
-        run: pip install --only-binary :all: asciinema==2.4.0
+        # ':all:' must stay quoted: unquoted, the colon+space after :all: turns
+        # this scalar into a nested YAML mapping and invalidates the whole
+        # workflow file (runs then fail in 0s with no jobs - see PR history).
+        run: pip install --only-binary ':all:' asciinema==2.4.0
 
       - name: Build console-logger (Windows cross-check tool)
         if: runner.os == 'Windows'
@@ -48,6 +51,7 @@ jobs:
 
       - name: Install oh-my-posh (Windows multi-byte stress test)
         if: runner.os == 'Windows'
+        continue-on-error: true   # best-effort: the stress test skips gracefully without it
         shell: pwsh
         run: |
           winget install JanDeDobbeleer.OhMyPosh --accept-source-agreements --accept-package-agreements --silent
