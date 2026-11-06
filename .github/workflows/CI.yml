@@ -53,9 +53,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Deterministic pinned install (direct download; winget is not
-          # version-pinnable). The issue #5 stress test depends on this binary:
-          # if it cannot be installed the job fails - never a silent skip.
+          # Deterministic pinned install. winget also supports exact versions
+          # (winget install --version plus winget pin), but a direct download
+          # lets the repo pin the artifact's SHA256 (same supply-chain posture
+          # as the SHA-pinned actions) and avoids winget/msstore source flake
+          # on hosted runners. If it cannot be installed the job fails -
+          # never a silent skip.
           $version = '31.9.1'
           $expectedHash = 'c2b34d2e8d9db243172170ce4adb70b0bd1476d29d355bc783cfa886724eb27e'
           $installDir = Join-Path $env:RUNNER_TEMP 'oh-my-posh'
