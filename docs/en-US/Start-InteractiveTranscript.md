@@ -93,3 +93,4 @@ session is the closest a PowerShell Gallery module can deliver.
   harnesses), a warning is emitted: Windows may route the recorded process
   output around the pseudo-console. Run from an interactive terminal.
 - Unix input recording is not supported yet (warning when requested).
+# SonarCloud gate verification
