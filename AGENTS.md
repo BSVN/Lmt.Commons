@@ -174,6 +174,15 @@ before:
   CodeQL does not support PowerShell - the PSScriptAnalyzer gate in
   build.ps1 (Error+Warning severity, which includes the security rules)
   is the PowerShell-side static analysis.
+- SonarCloud (`.github/workflows/SonarCloud.yml`) analyzes the C# projects
+  with the dotnet-sonarscanner (begin/build/end around the same explicit
+  csproj builds). It SKIPS with a warning until the project exists in
+  SonarCloud and the SONAR_TOKEN repo secret is set; org/project keys
+  default to bsvn / BSVN_Lmt.Commons and are overridable via the
+  SONAR_PROJECT_KEY / SONAR_ORG repository variables. SonarCloud must be
+  configured with CI-based analysis ('With GitHub Actions'), NOT
+  automatic analysis, or the two will conflict. SonarCloud has no
+  PowerShell support either.
 - Publishing (`.github/workflows/Publish.yml`) triggers on a **published
   GitHub Release**. It runs the full gate, then publishes every module whose
   manifest version is newer than the gallery version (idempotent, safe to

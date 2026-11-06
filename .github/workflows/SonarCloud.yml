@@ -1,0 +1,57 @@
+name: SonarCloud
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  # Override via repository variables if SonarCloud assigns different keys;
+  # SonarCloud shows the exact values on the project's 'Analyze with GitHub
+  # Actions' configuration page.
+  SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'BSVN_Lmt.Commons' }}
+  SONAR_ORG: ${{ vars.SONAR_ORG || 'bsvn' }}
+
+jobs:
+  analyze:
+    name: Analyze C# (SonarCloud)
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # SonarCloud needs full history for SCM/blame data.
+          fetch-depth: 0
+
+      - name: Install SonarScanner for .NET
+        if: env.SONAR_TOKEN != ''
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Begin SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
+        run: |
+          dotnet sonarscanner begin \
+            /k:"$SONAR_PROJECT_KEY" \
+            /o:"$SONAR_ORG" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.exclusions="templates/**,out/**"
+
+      - name: Build C# interop projects
+        if: env.SONAR_TOKEN != ''
+        run: |
+          dotnet build src/Bsn.Host/Bsn.Host.csproj --configuration Release
+          dotnet build src/Bsn.SystemManagement/Bsn.SystemManagement.csproj --configuration Release
+
+      - name: End SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+      - name: Configuration required
+        if: env.SONAR_TOKEN == ''
+        run: |
+          echo "::warning::SonarCloud analysis skipped: the SONAR_TOKEN secret is not set. Create the project in SonarCloud (choose 'With GitHub Actions', not automatic analysis), then add the token as the SONAR_TOKEN repository secret."
