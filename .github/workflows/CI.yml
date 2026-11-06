@@ -22,7 +22,10 @@ jobs:
 
       - name: Install asciinema (Linux cross-check tool)
         if: runner.os == 'Linux'
-        run: pip install --only-binary :all: asciinema==2.4.0
+        # ':all:' must stay quoted: unquoted, the colon+space after :all: turns
+        # this scalar into a nested YAML mapping and invalidates the whole
+        # workflow file (runs then fail in 0s with no jobs - see PR history).
+        run: pip install --only-binary ':all:' asciinema==2.4.0
 
       - name: Build console-logger (Windows cross-check tool)
         if: runner.os == 'Windows'
@@ -50,13 +53,55 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          winget install JanDeDobbeleer.OhMyPosh --accept-source-agreements --accept-package-agreements --silent
-          $poshPath = "$env:LOCALAPPDATA\Programs\oh-my-posh\bin"
-          if (Test-Path $poshPath) {
-            Add-Content -LiteralPath $env:GITHUB_PATH -Value $poshPath
-            Write-Host "oh-my-posh installed"
-          } else {
-            Write-Warning "oh-my-posh installation failed; stress test will skip"
+          # winget is the idiomatic installer (review decision). The version is
+          # pinned with --version/--exact, and winget verifies the downloaded
+          # installer against the winget-pkgs manifest InstallerSha256 during
+          # install - no manual hash step needed
+          # (https://learn.microsoft.com/en-us/windows/package-manager/winget/hash).
+          # The issue #5 stress test depends on this binary: if the install
+          # fails the job fails - never a silent skip.
+          winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
+
+          # The winget package is an MSIX (ohmyposh.cli). Its public entry
+          # point is the app execution alias in WindowsApps - a reparse point
+          # that fails to execute from pwsh under redirected stdio on hosted
+          # runners ("StandardOutputEncoding is only supported when standard
+          # output is redirected"). Resolve the REAL package binary via
+          # Get-AppxPackage and use it for verification and PATH.
+          $appx = Get-AppxPackage -Name 'ohmyposh.cli' -ErrorAction Stop
+          if (-not $appx) {
+            throw 'ohmyposh.cli package not found after winget install.'
+          }
+          if ($appx.Version -ne '31.9.1.0') {
+            throw "oh-my-posh package version $($appx.Version) installed; expected 31.9.1.0."
+          }
+
+          $packageExe = Join-Path $appx.InstallLocation 'oh-my-posh.exe'
+          if (-not (Test-Path -LiteralPath $packageExe)) {
+            throw "oh-my-posh.exe not found inside the package at $packageExe."
+          }
+
+          # Hard verification: the binary must execute and report the pinned version.
+          $reported = ("{0}" -f (& $packageExe version)).Trim()
+          if ($LASTEXITCODE -ne 0 -or $reported -ne '31.9.1') {
+            throw "oh-my-posh reported '$reported' (exit $LASTEXITCODE); expected 31.9.1."
+          }
+          Write-Host "oh-my-posh $reported installed via winget ($packageExe)"
+
+          # GITHUB_PATH is prepended, so 'oh-my-posh' resolves to the package
+          # binary, not the WindowsApps alias reparse point.
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $appx.InstallLocation
+
+          # The MSIX ships the themes inside the package directory; point the
+          # stress test at the glyph-rich atomic theme when present (it falls
+          # back to the default theme, which still renders nerd-font glyphs).
+          $themesDir = Join-Path $appx.InstallLocation 'themes'
+          if (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json')) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
+            Write-Host 'POSH_THEMES_PATH set; the stress test will use atomic.omp.json'
+          }
+          else {
+            Write-Host 'No themes directory found; the stress test will render the default theme.'
           }
 
       - name: Bootstrap development dependencies

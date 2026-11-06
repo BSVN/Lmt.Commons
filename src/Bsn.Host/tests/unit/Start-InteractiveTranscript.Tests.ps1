@@ -13,6 +13,14 @@ BeforeAll {
     catch [System.IO.FileLoadException] {
         Import-Module -Name (Join-Path $moduleRoot 'Bsn.Host.psm1') -Force -ErrorAction 'Stop'
     }
+
+    # Native keyword enums cannot be referenced by a bare type literal from
+    # test scope: the literal resolves only in files whose 'using module'
+    # header bound it at compile time (module files; see AGENTS.md), and a
+    # using header in this test file would execute before BeforeAll can make
+    # Bsn.Common resolvable. Pull the enum value from the defining module's
+    # own scope instead, where the literal always resolves.
+    $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
 }
 
 Describe 'Start-InteractiveTranscript' {
@@ -219,6 +227,14 @@ Describe 'Start-InteractiveTranscript' {
 
         It 'throws when both stdin and stdout are redirected on Windows (issue #8)' {
             # https://github.com/BSVN/Lmt.Commons/issues/8
+            # Requires a real Windows host: with -Platform Windows the version
+            # guard runs before the redirected-stdio check, and on Unix hosts
+            # [Environment]::OSVersion.Version is the kernel version (major
+            # below 10), so the version error fires instead of the stdio one.
+            # Compare against the enum value pulled from Bsn.Common (BeforeAll).
+            if ((Get-BsnOperatingSystem) -ne $script:BsnWindows) {
+                Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
+            }
             # In CI/test context, both are typically redirected
             if ([Console]::IsInputRedirected -and [Console]::IsOutputRedirected) {
                 { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Throw '*cannot capture output*'
@@ -230,6 +246,9 @@ Describe 'Start-InteractiveTranscript' {
 
         It 'warns (not throws) when only one handle is redirected (issue #8)' {
             # https://github.com/BSVN/Lmt.Commons/issues/8
+            if ((Get-BsnOperatingSystem) -ne $script:BsnWindows) {
+                Set-ItResult -Skipped -Because 'requires a Windows host; on Unix the Windows-version guard throws first.'
+            }
             if ([Console]::IsInputRedirected -xor [Console]::IsOutputRedirected) {
                 { & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform Windows } } | Should -Not -Throw
             }
