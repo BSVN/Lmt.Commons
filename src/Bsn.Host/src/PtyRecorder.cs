@@ -402,7 +402,7 @@ namespace Bsn.Host.Interop
     internal class CastWriter : IDisposable
     {
         private StreamWriter writer;
-        private object sync = new object();
+        private readonly object sync = new object();
         private int castVersion;
         private double previousElapsed;
 

@@ -174,15 +174,15 @@ before:
   CodeQL does not support PowerShell - the PSScriptAnalyzer gate in
   build.ps1 (Error+Warning severity, which includes the security rules)
   is the PowerShell-side static analysis.
-- SonarCloud (`.github/workflows/SonarCloud.yml`) analyzes the C# projects
-  with the dotnet-sonarscanner (begin/build/end around the same explicit
-  csproj builds). It SKIPS with a warning until the project exists in
-  SonarCloud and the SONAR_TOKEN repo secret is set; org/project keys
-  default to bsvn / BSVN_Lmt.Commons and are overridable via the
-  SONAR_PROJECT_KEY / SONAR_ORG repository variables. SonarCloud must be
-  configured with CI-based analysis ('With GitHub Actions'), NOT
-  automatic analysis, or the two will conflict. SonarCloud has no
-  PowerShell support either.
+- SonarCloud (`.github/workflows/SonarCloud.yml`): the project runs on
+  SonarCloud **Automatic Analysis** (org `bsvn`, key `BSVN_Lmt.Commons`)
+  - it indexes PowerShell files (line counts) and fully analyzes the C#
+  and workflow YAML. The CI workflow remains in place but self-skips
+  (no SONAR_TOKEN); it activates automatically if the project is ever
+  switched to CI-based analysis. First findings fixed: S2445 (lock on
+  writable field -> readonly in CastWriter) and S7637 (pin third-party
+  actions to full commit SHAs - codecov-action; Dependabot keeps SHA
+  pins updated).
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
   `ci`); dormant nuget entries per csproj for future PackageReferences.
