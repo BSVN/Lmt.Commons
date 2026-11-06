@@ -20,6 +20,32 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v7
 
+      - name: Install asciinema (Linux cross-check tool)
+        if: runner.os == 'Linux'
+        run: pip install asciinema
+
+      - name: Build console-logger (Windows cross-check tool)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $toolDir = Join-Path $env:RUNNER_TEMP 'console-logger'
+          git clone --depth 1 https://github.com/rhubarb-geek-nz/console-logger.git $toolDir
+          Push-Location "$toolDir\win32"
+          $vcvars = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if (Test-Path $vcvars) {
+            cmd /c "`"$vcvars`" >NUL && cl /W4 /O2 conlog.c /Fe:conlog.exe" 2>&1 | Write-Verbose
+            if (Test-Path conlog.exe) {
+              Add-Content -LiteralPath $env:GITHUB_PATH -Value "$toolDir\win32"
+              Write-Host "conlog.exe built successfully"
+            } else {
+              Write-Warning "conlog.exe build failed; console-logger cross-check test will skip"
+            }
+          } else {
+            Write-Warning "Visual Studio not found; console-logger cross-check test will skip"
+          }
+          Pop-Location
+
       - name: Bootstrap development dependencies
         shell: pwsh
         run: ./build.ps1 -Bootstrap

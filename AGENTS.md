@@ -189,6 +189,16 @@ before:
   no analysis appears within 10 minutes. Make it (plus the CI matrix
   and CodeQL checks) a required status check via branch protection to
   enforce it before merges.
+- System tests (`src/Bsn.Host/tests/system/`): full end-to-end tests
+  that exercise the real recording engines (no mocks). Windows uses a
+  hidden-console runner process (CI has redirected stdio which breaks
+  ConPTY); Linux uses in-process script(1). Cross-check against
+  independent tools: asciinema (Linux, reference asciicast
+  implementation), tmux pipe-pane (Linux, independent PTY), and
+  console-logger (Windows, independent ConPTY wrapper from
+  rhubarb-geek-nz/console-logger, cited in RFC 421). All cross-check
+  tests skip gracefully when their tool is unavailable. See
+  tests/system/README.md for the full architecture diagram.
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
   `ci`); dormant nuget entries per csproj for future PackageReferences.
