@@ -8,6 +8,18 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Recordings of byte-writing TUI applications (OpenCode, other
+  Go/Bubble Tea and Node TUIs, `cmd /c type`) are no longer corrupted
+  to codepage mojibake: the recorded session now bootstraps the console
+  codepage to UTF-8 before the command runs (the programmatic
+  `chcp 65001` via `[Console]::OutputEncoding`/`InputEncoding`).
+  Root cause: a fresh pseudo console starts with the OEM output
+  codepage (probe: 437), and OEM-codepage-decoding conhosts decode a
+  child's stdout BYTES with it - one box-drawing character
+  (U+2500, UTF-8 `E2 94 80`) arrived as three CP-decoded characters.
+  pwsh's own output was immune (`WriteConsoleW`), which is why
+  synthetic pwsh probes passed while real byte-writing TUIs were
+  corrupted. [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
 - Interop assembly loading is now managed by the module loader (via the
   shared Bsn.Common helper) instead of the manifest's
   `RequiredAssemblies`: re-importing with `Import-Module -Force` reuses
@@ -29,6 +41,15 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   Bsn.SystemManagement assert the built DLL version equals the manifest
   version.
   [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
+
+### Added
+
+- System tests reproducing each reported corruption scenario against
+  the real ConPTY engine: the OEM-codepage probe (the recorded session
+  must report codepage 65001), a raw byte-writing child (Go/Node TUI
+  output semantics) asserted character-for-character, a real OpenCode
+  TUI session (when installed), and metacharacter round-trip through
+  the real engine (issues #5 and #7).
 
 ## [Bsn.SystemManagement 0.2.1] - 2026-11-07
 

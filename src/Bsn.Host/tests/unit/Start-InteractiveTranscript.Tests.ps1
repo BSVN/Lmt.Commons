@@ -266,6 +266,24 @@ Describe 'Start-InteractiveTranscript' {
             $commandLine | Should -BeLike '*-EncodedCommand*'
         }
 
+        It 'bootstraps the console codepage to UTF-8 in the recorded session (issue #5)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/5
+            # Byte-writing TUIs (Go/Bubble Tea such as OpenCode) emit UTF-8
+            # bytes that OEM-codepage-decoding conhosts mangle; the recorded
+            # session must set the console codepage to UTF-8 before the
+            # command runs (the programmatic 'chcp 65001').
+            $commandLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine -Command 'echo hello' }
+            $encoded = [regex]::Match($commandLine, '-EncodedCommand ([A-Za-z0-9+/=]+)').Groups[1].Value
+            $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
+            $decoded.Contains('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
+            $decoded.Contains('[Console]::InputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
+            $decoded.Contains('echo hello') | Should -BeTrue
+
+            $interactiveLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine }
+            $interactiveLine.Contains('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
+            $interactiveLine.Contains('Import-Module Bsn.Host') | Should -BeTrue
+        }
+
         It 'preserves shell metacharacters through Base64 round-trip' -TestCases @(
             @{ Original = "Write-Output A | Write-Host -NoNewline 'got: '" }
             @{ Original = 'Write-Output "hello | world" & more' }
@@ -277,7 +295,10 @@ Describe 'Start-InteractiveTranscript' {
 
             if ($commandLine -match '-EncodedCommand\s+([A-Za-z0-9+/=]+)') {
                 $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
-                $decoded | Should -Be $Original
+                # The wrapper prefixes the UTF-8 codepage bootstrap (issue #5);
+                # the user's command must follow it verbatim.
+                $decoded.Contains('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; ') | Should -BeTrue
+                $decoded.EndsWith($Original) | Should -BeTrue
             }
             else {
                 throw "Expected -EncodedCommand in command line but got: $commandLine"

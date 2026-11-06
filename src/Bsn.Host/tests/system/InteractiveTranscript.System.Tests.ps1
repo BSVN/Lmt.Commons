@@ -643,6 +643,175 @@ echo 'VIM-TUI-DONE'
         }
     }
 
+    Context 'Issue #5: console codepage bootstrap (byte-writing TUIs such as OpenCode)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
+        # Second root cause of the reported recording corruption: a fresh
+        # pseudo console starts with the OEM output codepage (e.g. 437 - the
+        # probe 'chcp.com' proves it), and OEM-codepage-decoding conhosts
+        # decode a child's stdout BYTES with that codepage. Byte-writing TUIs
+        # (Go/Bubble Tea applications such as OpenCode, Node raw writes,
+        # 'cmd /c type') emit UTF-8 bytes, so every multi-byte character is
+        # mangled BEFORE the recorder sees a single byte: one box-drawing
+        # character (U+2500, UTF-8 E2 94 80) arrives as three CP-decoded
+        # characters (CP437 'Gamma ohmega-acute'). pwsh's own output is
+        # immune (it writes through WriteConsoleW), which is why synthetic
+        # pwsh probes passed while real byte-writing TUIs were corrupted.
+        # The wrapper therefore bootstraps [Console]::OutputEncoding /
+        # InputEncoding to UTF-8 (the programmatic 'chcp 65001') before the
+        # recorded command runs.
+
+        It 'records a session whose console codepage is UTF-8 (65001)' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the codepage bootstrap is a ConPTY (Windows engine) behavior.'
+            }
+
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-chcp.ps1'
+            'chcp.com' | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'codepage.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+            $rawStream.Contains('65001') | Should -BeTrue -Because ('the recorded session must bootstrap the console codepage to UTF-8 (conhost decodes child output bytes with it; a fresh pseudo console starts at the OEM codepage); the recorded chcp output was: ' + ($rawStream -replace '\u001b', '^['))
+        }
+
+        It 'records a BYTE-WRITING child (raw console-handle output, Go/Node TUI style) without corruption' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the codepage bootstrap is a ConPTY (Windows engine) behavior.'
+            }
+
+            # The probe file holds UTF-8 bytes for box-drawing borders plus an
+            # ASCII marker - exactly the payload shape of a byte-writing TUI.
+            $probePath = Join-Path -Path $TestDrive -ChildPath 'probe-utf8.bin'
+            $box = [string][char]0x2500
+            $probeText = 'START-MARKER' + "`r`n" + `
+                ([string][char]0x256D) + ($box * 30) + ([string][char]0x256E) + "`r`n" + `
+                ([string][char]0x2502) + ' SALAM-MARKER ' + ([string][char]0x2502) + "`r`n" + `
+                ([string][char]0x2570) + ($box * 30) + ([string][char]0x256F) + "`r`n" + `
+                'END-MARKER'
+            [System.IO.File]::WriteAllBytes($probePath, [System.Text.Encoding]::UTF8.GetBytes($probeText))
+
+            # The scenario writes the file's RAW BYTES straight to the console
+            # output handle (no WriteConsoleW) - byte-writer semantics.
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-bytewriter.ps1'
+            @'
+$bytes = [System.IO.File]::ReadAllBytes($env:BsnSystemTestProbeFile)
+$stdout = [Console]::OpenStandardOutput()
+$stdout.Write($bytes, 0, $bytes.Length)
+$stdout.Flush()
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $env:BsnSystemTestProbeFile = $probePath
+            try {
+                $castPath = Join-Path -Path $TestDrive -ChildPath 'bytewriter.cast'
+                $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+                $result.ExitCode | Should -Be 0
+            }
+            finally {
+                Remove-Item 'Env:BsnSystemTestProbeFile' -ErrorAction 'SilentlyContinue'
+            }
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+            $countOf = { param($codePoint) ([regex]::Matches($rawStream, [regex]::Escape([string][char]$codePoint))).Count }
+
+            (& $countOf 0x256D) | Should -Be 1 -Because 'the top-left rounded corner must survive (mangling turns one box character into several CP-decoded characters)'
+            (& $countOf 0x2500) | Should -Be 60 -Because 'all sixty horizontal border characters must survive byte-for-byte'
+            (& $countOf 0x256E) | Should -Be 1 -Because 'the top-right rounded corner must survive'
+            (& $countOf 0x2570) | Should -Be 1 -Because 'the bottom-left rounded corner must survive'
+            (& $countOf 0x256F) | Should -Be 1 -Because 'the bottom-right rounded corner must survive'
+            $rawStream.Contains('SALAM-MARKER') | Should -BeTrue -Because 'the ASCII payload must be captured'
+
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because 'no chunk-boundary U+FFFD corruption is allowed (issue #5 decoder fix)'
+            $mojibakeCount = ([regex]::Matches($rawStream, '[\u00C0-\u00FF]')).Count
+            $mojibakeCount | Should -Be 0 -Because ('no codepage-decoded mojibake characters are allowed; found {0} Latin-1-range characters, the signature of conhost decoding UTF-8 bytes with the OEM codepage (issue #5)' -f $mojibakeCount)
+        }
+
+        It 'records a real OpenCode TUI session without corruption' -Tag 'RequiresOpenCode' {
+            # https://github.com/BSVN/Lmt.Commons/issues/5
+            # The exact scenario from the field report: OpenCode renders its
+            # full-screen TUI (Bubble Tea/Go) by writing UTF-8 bytes directly
+            # to the console handle. On OEM-codepage-decoding conhosts this
+            # corrupted every border in the recording.
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'OpenCode TUI recording test targets the Windows ConPTY engine.'
+            }
+            if (-not (Get-Command -Name 'opencode' -ErrorAction 'SilentlyContinue')) {
+                Set-ItResult -Skipped -Because 'opencode is not on PATH (install it to run this real-world TUI regression test).'
+            }
+
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-opencode.ps1'
+            @'
+$env:TERM = 'xterm-256color'
+opencode
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'opencode.cast'
+            $null = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath -StopAfterDelay
+            Test-Path -LiteralPath $castPath | Should -BeTrue -Because 'the OpenCode session must produce a cast'
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+            $rawStream.Length | Should -BeGreaterThan 1000 -Because 'the OpenCode TUI renders substantial output'
+
+            $replacementCount = ([regex]::Matches($rawStream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because 'the OpenCode TUI recording must contain zero U+FFFD replacement characters'
+            $mojibakeCount = ([regex]::Matches($rawStream, '[\u00C0-\u00FF]')).Count
+            $mojibakeCount | Should -Be 0 -Because ('the OpenCode TUI recording must contain zero codepage mojibake characters (found {0}); UTF-8 box-drawing borders must survive the console codepage bootstrap (issue #5)' -f $mojibakeCount)
+
+            $hasKnownUiText = $rawStream.Contains('New session') -or $rawStream.Contains('Ask anything') -or $rawStream.Contains('Build')
+            $hasKnownUiText | Should -BeTrue -Because 'the OpenCode UI text must be captured (proves the recorded session is the TUI)'
+        }
+    }
+
+    Context 'Issue #7: metacharacters survive a REAL ConPTY recording' {
+        # https://github.com/BSVN/Lmt.Commons/issues/7
+        # The unit tests prove -EncodedCommand preserves the command text; this
+        # system test proves it END TO END through the real engine: the recorded
+        # output must contain the metacharacter payload verbatim.
+        It 'records -Command values with pipes, ampersands and redirections exactly' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
+            }
+
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-metachar.ps1'
+            @'
+Write-Output 'METACHAR:a|b&c<d>e^f'
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'metachar.cast'
+            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result.ExitCode | Should -Be 0
+
+            $rawStream = Get-BsnCastRawStream -CastPath $castPath
+            $rawStream.Contains('METACHAR:a|b&c<d>e^f') | Should -BeTrue -Because 'pipes, ampersands, redirections and carets must survive the recorded command line verbatim (issue #7)'
+        }
+    }
+
     Context 'session with cmdlets and a TUI application' {
         It 'records the session and the cast matches the real view' {
             if (-not $script:CanRunSystemTests) {
