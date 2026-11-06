@@ -115,17 +115,23 @@ before:
   - Bare literals in function bodies DO work cross-module once the
     defining module is loaded - the consumer module loaders import
     Bsn.Common before dot-sourcing function files, so this always holds.
-  - Enum PARAM TYPE CONSTRAINTS with NATIVE keyword enums break Pester's
-    `Mock` in EVERY scope - verified experimentally three ways on PS 5.1
-    and PS 7: a type accelerator does not help, `using module` at the top
-    of the test file does not help (Pester builds the proxy in the
-    mocked-into scope, not the test scope), and even an enum defined in
-    the SAME module as the constrained function fails. Assembly-backed
-    (C#) enums are the exception: they are AppDomain-global and Mock-safe
-    (proven in-repo). Consequence: `BsnRecordingFormat` lives in
-    Bsn.Host.csproj and constrains -RecordingFormat/-Format; parameters
-    constrained by Bsn.Common's native enum (e.g. $Platform on the mocked
-    Test-BsnRecordingEnvironment) use [string] + ValidateSet instead.
+  - Native enum PARAM TYPE CONSTRAINTS and Pester's `Mock` - the
+    verified model (both editions, see pester/Pester#3065):
+    - Constraints written as bare names in files whose `using module`
+      header binds them at compile time are fine, INCLUDING under Mock,
+      when mocked with `-ModuleName` into a scope that resolves the enum
+      and invoked module-internally (this repo's shape: -Platform on the
+      mocked Test-BsnRecordingEnvironment uses the real enum).
+    - Mocked from test scope without -ModuleName: the proxy's param block
+      recompiles via [scriptblock]::Create in Pester's scope and the call
+      fails with 'Unable to find type'. Fix: `-RemoveParameterType
+      <Param>` (Pester's built-in switch for exactly this).
+    - A constraint that never bound at compile time (e.g. a
+      module-qualified literal in a dot-sourced file) fails earlier, at
+      Mock setup, inside the CommandMetadata cast.
+    - `using module` at the top of the TEST file does NOT help the proxy;
+      type accelerators do not either. Assembly-backed (C#) enums are
+      always Mock-safe (BsnRecordingFormat in Bsn.Host.csproj).
   - Avoid relying on `using module Bsn.Common` resolving by luck: it
     resolves the module name through PSModulePath at parse time, so the
     consumer module loaders self-heal `PSModulePath` (prepend the repo

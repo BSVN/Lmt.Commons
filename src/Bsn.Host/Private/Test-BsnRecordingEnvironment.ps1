@@ -20,19 +20,15 @@ using module Bsn.Common
 function Test-BsnRecordingEnvironment {
     [CmdletBinding()]
     param(
-        # String on purpose: a BsnOperatingSystem type constraint breaks Pester's
-        # Mock metadata generation for cross-module dynamic enums. The value is
-        # the enum's string form (Get-BsnOperatingSystem converts on binding).
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Windows', 'Linux', 'macOS', 'Unknown')]
-        [string]$Platform
+        [BsnOperatingSystem]$Platform
     )
 
-    if ($Platform -eq 'Unknown') {
+    if ($Platform -eq [BsnOperatingSystem]::Unknown) {
         throw 'Interactive transcripts are not supported on this platform (detected Unknown).'
     }
 
-    if ($Platform -eq 'Windows') {
+    if ($Platform -eq [BsnOperatingSystem]::Windows) {
         $osVersion = [System.Environment]::OSVersion.Version
         if (($osVersion.Major -lt 10) -or (($osVersion.Major -eq 10) -and ($osVersion.Build -lt 17763))) {
             throw ('Interactive transcripts on Windows require Windows 10 1809 / Windows Server 2019 or newer for pseudo-console support (detected {0}).' -f $osVersion)

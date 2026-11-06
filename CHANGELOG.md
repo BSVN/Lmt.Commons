@@ -8,6 +8,15 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `Test-BsnRecordingEnvironment`'s `-Platform` parameter is now typed as
+  the real native `BsnOperatingSystem` enum (the ValidateSet-string
+  workaround is gone): a bare constraint bound at compile time via the
+  file's `using module` header survives `Mock -ModuleName` with
+  module-internal invocation - the Pester interaction model fully
+  verified on PS 5.1 and PS 7 (test-scope mocking needs
+  `-RemoveParameterType`; setup-time failures indicate never-bound
+  constraints; `using module` in test files and type accelerators do not
+  help the generated proxy; assembly enums are always safe).
 - `-RecordingFormat` is now typed as the `Bsn.Host.BsnRecordingFormat`
   enum (defined in Bsn.Host.csproj, the RFC 421 RecordingOutputFormat
   shape): assembly-backed so Pester mocks of the renderer stay safe,
