@@ -4,6 +4,38 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.1] - 2026-11-07
+
+### Fixed
+
+- Cast recordings no longer corrupt multi-byte UTF-8 characters at
+  4096-byte chunk boundaries: the ConPTY engine and the Unix converter
+  keep persistent `System.Text.Decoder` instances for the output and
+  input streams, so multi-byte sequences split across reads decode
+  correctly (verified with an oh-my-posh nerd-font prompt stress test:
+  zero U+FFFD in the cast).
+  [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
+- Cast files are written with incremental flushes (AutoFlush in the
+  ConPTY CastWriter; header + per-event flush in the converter), so a
+  recording whose process dies abnormally still leaves a valid,
+  playable cast instead of losing the header and tail to stream
+  buffering. [#6](https://github.com/BSVN/Lmt.Commons/issues/6)
+- `Start-InteractiveTranscript -Command` values containing pipes,
+  quotes and other shell metacharacters are no longer mangled: the
+  command is wrapped in `pwsh -EncodedCommand` (Base64) instead of
+  `cmd.exe /d /c`. [#7](https://github.com/BSVN/Lmt.Commons/issues/7)
+- Starting a recording from a host with BOTH stdin and stdout
+  redirected (CI, scripted harnesses) is now a terminating error with
+  guidance instead of silently producing an empty cast that reports
+  success. [#8](https://github.com/BSVN/Lmt.Commons/issues/8)
+
+### Notes
+
+- Bsn.Host 0.2.0 was never published to the PowerShell Gallery: the
+  v0.2.0 release tag predates this module's version bump, so the
+  idempotent Publish task correctly skipped it. 0.2.1 is the first
+  gallery release containing the fixes above.
+
 ## [Bsn.SystemManagement 0.2.0] - 2026-11-06
 
 ### Changed
