@@ -73,6 +73,9 @@ Describe 'Start-InteractiveTranscript' {
 
             $recording = Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'a.cast')
 
+            # Issue #7 fix: the engine now wraps -Command in pwsh -EncodedCommand
+            # (Base64) instead of cmd.exe /d /c, which mangled metacharacters.
+            # https://github.com/BSVN/Lmt.Commons/issues/7
             Should -Invoke -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $CommandLine -like '*-EncodedCommand*' }
             $recording.ExitCode | Should -Be 7
             $recording.DurationSec | Should -Be 2.25

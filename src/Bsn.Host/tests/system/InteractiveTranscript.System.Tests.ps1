@@ -438,6 +438,7 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
     }
 
     Context 'Issue #5: large multi-byte burst survives without U+FFFD corruption' {
+        # https://github.com/BSVN/Lmt.Commons/issues/5
         It 'records 60000 multi-byte characters with zero U+FFFD in the cast' {
             if (-not $script:CanRunSystemTests) {
                 Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'

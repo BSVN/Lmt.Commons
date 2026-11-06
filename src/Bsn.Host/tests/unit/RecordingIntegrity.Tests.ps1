@@ -1,3 +1,22 @@
+<#
+    Recording integrity tests: regression coverage for reported bugs.
+
+    Issue #5: Cast recordings corrupt multi-byte UTF-8 characters at
+              4096-byte chunk boundaries
+              https://github.com/BSVN/Lmt.Commons/issues/5
+
+    Issue #6: Cast file loses header/tail when the recording process dies
+              abnormally (StreamWriter buffering defeats incremental writes)
+              https://github.com/BSVN/Lmt.Commons/issues/6
+
+    Issue #7: -Command values containing pipes/quotes are mangled by the
+              cmd.exe /d /c wrapper
+              https://github.com/BSVN/Lmt.Commons/issues/7
+
+    Issue #8: Recording from a host with redirected stdio produces an empty
+              cast but reports success
+              https://github.com/BSVN/Lmt.Commons/issues/8
+#>
 BeforeAll {
     $moduleRoot = Split-Path -Parent -Path (Split-Path -Parent -Path $PSScriptRoot)
     $env:PSModulePath = '{0}{1}{2}' -f (Split-Path -Parent -Path $moduleRoot), [System.IO.Path]::PathSeparator, $env:PSModulePath
@@ -10,7 +29,8 @@ BeforeAll {
     }
 }
 
-Describe 'Issue #7: -Command values with shell metacharacters are preserved' {
+Describe 'Command encoding preserves shell metacharacters (issue #7)' -Tag 'Issue7' {
+    # https://github.com/BSVN/Lmt.Commons/issues/7
     Context 'Get-BsnRecordingCommandLine encoding' {
         It 'uses Base64 encoding instead of cmd.exe /d /c' {
             $commandLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine -Command 'echo hello' }
@@ -38,7 +58,8 @@ Describe 'Issue #7: -Command values with shell metacharacters are preserved' {
     }
 }
 
-Describe 'Issue #8: redirected stdio produces an error instead of silent empty cast' {
+Describe 'Redirected stdio detection (issue #8)' -Tag 'Issue8' {
+    # https://github.com/BSVN/Lmt.Commons/issues/8
     Context 'Test-BsnRecordingEnvironment behavior' {
         It 'throws when both stdin and stdout are redirected on Windows' {
             # In CI/test context, both are typically redirected
@@ -61,7 +82,8 @@ Describe 'Issue #8: redirected stdio produces an error instead of silent empty c
     }
 }
 
-Describe 'Issue #5: UTF-8 multi-byte sequences survive chunk boundaries (converter)' {
+Describe 'Multi-byte UTF-8 survives chunk boundaries (issue #5)' -Tag 'Issue5' {
+    # https://github.com/BSVN/Lmt.Commons/issues/5
     Context 'ConvertTo-BsnAsciicast with chunked multi-byte data' {
         It 'produces no U+FFFD when multi-byte chars span timing-file chunks' {
             $outputPath = Join-Path -Path $TestDrive -ChildPath 'utf8.log'
@@ -98,7 +120,8 @@ Describe 'Issue #5: UTF-8 multi-byte sequences survive chunk boundaries (convert
     }
 }
 
-Describe 'Issue #6: CastWriter writes incrementally (AutoFlush)' {
+Describe 'Incremental flush prevents data loss (issue #6)' -Tag 'Issue6' {
+    # https://github.com/BSVN/Lmt.Commons/issues/6
     It 'the cast file has content immediately after the header is written' {
         # We can verify this indirectly: the PowerShell converter (ConvertTo-BsnAsciicast)
         # uses the same pattern (write header + events with flush). The C# CastWriter
@@ -107,7 +130,6 @@ Describe 'Issue #6: CastWriter writes incrementally (AutoFlush)' {
         # Here we verify the converter flushes (same correctness contract).
         $outputPath = Join-Path -Path $TestDrive -ChildPath 'flush.log'
         $castPath = Join-Path -Path $TestDrive -ChildPath 'flush.cast'
-        Set-Content -LiteralPath $outputPath -Value 'hello'
         Set-Content -LiteralPath $outputPath -Value 'hello' -NoNewline
 
         # No timing file needed for approximated mode
