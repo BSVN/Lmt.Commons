@@ -1,9 +1,17 @@
-BeforeAll {
-    $moduleRoot = Split-Path -Parent -Path $PSScriptRoot
+﻿BeforeAll {
+    $moduleRoot = Split-Path -Parent -Path (Split-Path -Parent -Path $PSScriptRoot)
     # Make the repo sibling module Bsn.Common resolvable for RequiredModules validation.
     $env:PSModulePath = '{0}{1}{2}' -f (Split-Path -Parent -Path $moduleRoot), [System.IO.Path]::PathSeparator, $env:PSModulePath
     $script:ManifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.Host.psd1'
-    Import-Module -Name $script:ManifestPath -Force -ErrorAction 'Stop'
+    # The module's DLL may already be loaded in this process (e.g., by PSScriptAnalyzer
+    # analyzing the manifest), which makes Import-Module fail with FileLoadException.
+    # Fall back to importing the psm1 directly - the assembly is already in memory.
+    try {
+        Import-Module -Name $script:ManifestPath -Force -ErrorAction 'Stop'
+    }
+    catch [System.IO.FileLoadException] {
+        Import-Module -Name (Join-Path $moduleRoot 'Bsn.Host.psm1') -Force -ErrorAction 'Stop'
+    }
 }
 
 Describe 'Bsn.Host manifest' {

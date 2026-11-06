@@ -227,10 +227,15 @@ $taskMap = @{
             $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
             $previousModulePath = $env:PSModulePath
             $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+            # Pester needs Continue: the surrounding Stop mode turns every Write-Warning
+            # inside test execution into a container-level failure.
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
             try {
                 $result = Invoke-Pester -Configuration $pesterConfiguration
             }
             finally {
+                $ErrorActionPreference = $previousErrorActionPreference
                 $env:PSModulePath = $previousModulePath
             }
             if ($result.FailedCount -gt 0) {
