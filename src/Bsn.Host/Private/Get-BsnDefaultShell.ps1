@@ -1,3 +1,5 @@
+using module Bsn.Common
+
 <#
 .SYNOPSIS
     Resolves the default interactive shell for recording.
@@ -12,7 +14,7 @@ function Get-BsnDefaultShell {
     [OutputType([string])]
     param()
 
-    if ((Get-BsnOperatingSystem) -eq 'Windows') {
+    if ((Get-BsnOperatingSystem) -eq [BsnOperatingSystem]::Windows) {
         foreach ($shellName in @('pwsh', 'powershell')) {
             $shellCommand = Get-Command -Name $shellName -ErrorAction 'SilentlyContinue'
             if ($shellCommand) {
