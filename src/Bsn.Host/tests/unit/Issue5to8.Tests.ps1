@@ -18,40 +18,18 @@ Describe 'Issue #7: -Command values with shell metacharacters are preserved' {
             $commandLine | Should -BeLike '*-EncodedCommand*'
         }
 
-        It 'preserves pipe characters through Base64 round-trip' {
-            $original = "Write-Output A | Write-Host -NoNewline 'got: '"
-            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } $original
+        It 'preserves shell metacharacters through Base64 round-trip' -TestCases @(
+            @{ Original = "Write-Output A | Write-Host -NoNewline 'got: '" }
+            @{ Original = 'Write-Output "hello | world" & more' }
+            @{ Original = 'sort < input.txt > output.txt ^ special' }
+        ) {
+            param($Original)
 
-            # Extract the Base64 payload and decode it
-            if ($commandLine -match '-EncodedCommand\s+([A-Za-z0-9+/=]+)') {
-                $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
-                $decoded | Should -Be $original
-            }
-            else {
-                throw "Expected -EncodedCommand in command line but got: $commandLine"
-            }
-        }
-
-        It 'preserves embedded double quotes through Base64 round-trip' {
-            $original = 'Write-Output "hello | world" & more'
-            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } $original
+            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } $Original
 
             if ($commandLine -match '-EncodedCommand\s+([A-Za-z0-9+/=]+)') {
                 $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
-                $decoded | Should -Be $original
-            }
-            else {
-                throw "Expected -EncodedCommand in command line but got: $commandLine"
-            }
-        }
-
-        It 'preserves angle brackets and caret through Base64 round-trip' {
-            $original = 'sort < input.txt > output.txt ^ special'
-            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } $original
-
-            if ($commandLine -match '-EncodedCommand\s+([A-Za-z0-9+/=]+)') {
-                $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
-                $decoded | Should -Be $original
+                $decoded | Should -Be $Original
             }
             else {
                 throw "Expected -EncodedCommand in command line but got: $commandLine"
