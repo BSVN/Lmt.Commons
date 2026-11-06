@@ -24,7 +24,7 @@ jobs:
 
       - name: Analyze and test every module
         shell: pwsh
-        run: ./build.ps1 -Task Analyze, Test
+        run: ./build.ps1 -Task Analyze, Test -CodeCoverage
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -33,3 +33,12 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: out/testResults.*.xml
           if-no-files-found: ignore
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: always()
+        with:
+          files: out/coverage.*.xml
+          flags: powershell,${{ matrix.os }}
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

@@ -33,6 +33,8 @@ param(
 
     [string]$ModulesFilter = '*',
 
+    [switch]$CodeCoverage,
+
     [string]$ApiKey,
 
     [string]$Repository = 'PSGallery'
@@ -202,6 +204,19 @@ $taskMap = @{
             $pesterConfiguration.TestResult.OutputPath = $testResultPath
             $pesterConfiguration.TestResult.OutputFormat = 'NUnitXml'
             $pesterConfiguration.Output.Verbosity = 'Detailed'
+
+            if ($CodeCoverage.IsPresent) {
+                # JaCoCo XML per module; Codecov merges the reports (flagged by module).
+                $coveragePath = Join-Path -Path $script:OutputDirectory -ChildPath ('coverage.{0}.xml' -f $module.Name)
+                $pesterConfiguration.CodeCoverage.Enabled = $true
+                $pesterConfiguration.CodeCoverage.Path = @(
+                    Get-ChildItem -LiteralPath $module.Path -Recurse -Include '*.ps1', '*.psm1' -File |
+                        Where-Object -FilterScript { $_.FullName -notmatch '\\tests\\' } |
+                        ForEach-Object -Process { $_.FullName }
+                )
+                $pesterConfiguration.CodeCoverage.OutputPath = $coveragePath
+                $pesterConfiguration.CodeCoverage.OutputFormat = 'JaCoCo'
+            }
 
             Write-Host ("==> Testing {0}" -f $module.Name)
             # Make repo sibling modules (e.g. Bsn.Common) resolvable for RequiredModules validation.

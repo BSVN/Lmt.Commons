@@ -40,6 +40,7 @@ copying an existing module by hand:
 ./build.ps1 -Bootstrap                                   # deps: Pester 5.7.1+, PSScriptAnalyzer, Plaster
 ./build.ps1                                             # Analyze + Test, all modules
 ./build.ps1 -Task Analyze, Test -ModulesFilter 'Bsn.SystemManagement'   # single module
+./build.ps1 -Task Test -CodeCoverage                    # + JaCoCo reports (out/coverage.*.xml, CI uploads to Codecov)
 ./build.ps1 -Task Package                                # stages out/modules, zips out/packages
 ./build.ps1 -Task Publish -ApiKey <key>                  # or $env:PS_GALLERY_KEY
 ```

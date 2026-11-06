@@ -1,6 +1,7 @@
 # LMT.Commons — the BSN PowerShell module family
 
 [![CI](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml/badge.svg)](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/gh/BSVN/Lmt.Commons/branch/main/graph/badge.svg)](https://codecov.io/gh/BSVN/Lmt.Commons)
 
 This repository is the single home for the **Bsn.* PowerShell modules**
 published to the [PowerShell Gallery](https://www.powershellgallery.com/) —
