@@ -23,8 +23,11 @@ BeforeAll {
     # The enum value comes from the defining module's scope: a bare type
     # literal does not resolve from test scope, and a 'using module' header
     # here would execute before the PSModulePath fix above (see AGENTS.md).
+    # IsWindowsPlatform is pure platform semantics (engine dispatch); the PS 7
+    # console requirement is asserted per recording test with an explicit
+    # "system tests require PowerShell 7 console infrastructure" skip.
     $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
-    $script:IsWindowsPlatform = ($PSVersionTable.PSVersion.Major -ge 6) -and ((Get-BsnOperatingSystem) -eq $script:BsnWindows)
+    $script:IsWindowsPlatform = (Get-BsnOperatingSystem) -eq $script:BsnWindows
     $script:CanRunSystemTests = [bool](Get-Command -Name 'pwsh' -ErrorAction 'SilentlyContinue')
     $script:HasAsciinema = [bool](Get-Command -Name 'asciinema' -ErrorAction 'SilentlyContinue')
     $script:HasTmux = [bool](Get-Command -Name 'tmux' -ErrorAction 'SilentlyContinue')
