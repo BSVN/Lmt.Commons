@@ -1,6 +1,6 @@
 @{
     RootModule = 'Bsn.Host.psm1'
-    ModuleVersion = '0.2.0'
+    ModuleVersion = '0.2.1'
     GUID = '9d84a7b8-1f2b-4d60-a4bd-3d7ef1d9f337'
     Author = 'BSVN'
     CompanyName = 'BSVN'
@@ -22,7 +22,7 @@
             Tags = @('BSVN', 'Lmt', 'Host', 'Transcript', 'Recording', 'Terminal', 'Session', 'Asciicast', 'Asciinema', 'TUI', 'Audit', 'Screencast')
             LicenseUri = 'https://github.com/BSVN/Lmt.Commons/blob/main/LICENSE'
             ProjectUri = 'https://github.com/BSVN/Lmt.Commons'
-            ReleaseNotes = 'Initial release: Start-InteractiveTranscript records interactive terminal sessions (including full-screen TUI applications) to replayable asciicast v2 files; Stop-InteractiveTranscript stops a running recording; Show-InteractiveTranscript plays recordings back in the console.'
+            ReleaseNotes = 'Bug fix release: multi-byte UTF-8 survives chunk boundaries during recording; cast files stay valid when the recording process dies (incremental flush); -Command values round-trip safely through pwsh -EncodedCommand instead of cmd.exe; recording from a host with both stdin and stdout redirected is now a terminating error instead of an empty cast. Fixes issues #5, #6, #7 and #8.'
         }
     }
 }
