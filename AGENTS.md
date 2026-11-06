@@ -211,5 +211,10 @@ before:
 
 ## Git etiquette
 
-Do not push to origin unless the user explicitly asks in the session.
-Commit locally by default.
+- **Never push directly to `main`.** Always create a feature branch, push
+  it, open a PR, wait for the checks (CI matrix, CodeQL, SonarCloud Gate),
+  then merge. Branch protection enforces this, but respect it manually
+  too - even for small changes.
+- Branch naming: `feature/<topic>`, `fix/<topic>`, or `chore/<topic>`.
+- Commit locally on the feature branch by default; push the branch and
+  open the PR when the work is ready for review.
