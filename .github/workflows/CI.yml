@@ -51,17 +51,37 @@ jobs:
 
       - name: Install oh-my-posh (Windows multi-byte stress test)
         if: runner.os == 'Windows'
-        continue-on-error: true   # best-effort: the stress test skips gracefully without it
         shell: pwsh
         run: |
-          winget install JanDeDobbeleer.OhMyPosh --accept-source-agreements --accept-package-agreements --silent
-          $poshPath = "$env:LOCALAPPDATA\Programs\oh-my-posh\bin"
-          if (Test-Path $poshPath) {
-            Add-Content -LiteralPath $env:GITHUB_PATH -Value $poshPath
-            Write-Host "oh-my-posh installed"
-          } else {
-            Write-Warning "oh-my-posh installation failed; stress test will skip"
+          # Deterministic pinned install (direct download; winget is not
+          # version-pinnable). The issue #5 stress test depends on this binary:
+          # if it cannot be installed the job fails - never a silent skip.
+          $version = '31.9.1'
+          $expectedHash = 'c2b34d2e8d9db243172170ce4adb70b0bd1476d29d355bc783cfa886724eb27e'
+          $installDir = Join-Path $env:RUNNER_TEMP 'oh-my-posh'
+          $themesDir = Join-Path $installDir 'themes'
+          New-Item -ItemType Directory -Path $themesDir -Force | Out-Null
+
+          $exePath = Join-Path $installDir 'oh-my-posh.exe'
+          Invoke-WebRequest -Uri "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v$version/posh-windows-amd64.exe" -OutFile $exePath
+
+          $actualHash = (certutil -hashfile $exePath SHA256 | Select-Object -Skip 1 -First 1).Trim()
+          if ($actualHash -ne $expectedHash) {
+            throw "oh-my-posh v$version SHA256 mismatch: expected $expectedHash, got $actualHash."
           }
+
+          $reported = (& $exePath version)
+          if ($LASTEXITCODE -ne 0 -or -not $reported) {
+            throw "oh-my-posh v$version failed to execute (exit code $LASTEXITCODE)."
+          }
+          Write-Host "oh-my-posh $reported installed (SHA256 verified)"
+
+          # The stress test prefers $env:POSH_THEMES_PATH\atomic.omp.json (a
+          # nerd-font glyph-rich theme); provide it from the same release.
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/v$version/themes/atomic.omp.json" -OutFile (Join-Path $themesDir 'atomic.omp.json')
+
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $installDir
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
 
       - name: Bootstrap development dependencies
         shell: pwsh
