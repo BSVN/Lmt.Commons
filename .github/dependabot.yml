@@ -1,0 +1,46 @@
+# Dependabot configuration.
+#
+# github-actions is the ecosystem with live dependencies today (workflow
+# action pins). The nuget entries are dormant - the C# interop projects
+# currently have zero PackageReferences - and exist for the day they do.
+# PowerShell module dependencies (Pester, PSScriptAnalyzer, Plaster in
+# build.ps1 -Bootstrap) have no Dependabot ecosystem: they are gated with
+# MinimumVersion in the bootstrap and bumped manually.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Etc/UTC
+    groups:
+      # One PR for all routine action bumps keeps the noise down; security
+      # updates are never grouped by Dependabot and stay individual.
+      actions:
+        patterns:
+          - '*'
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: 'ci'
+
+  - package-ecosystem: nuget
+    directory: /src/Bsn.Host
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: 'build'
+
+  - package-ecosystem: nuget
+    directory: /src/Bsn.SystemManagement
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: 'build'

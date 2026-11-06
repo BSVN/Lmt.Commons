@@ -183,6 +183,13 @@ before:
   configured with CI-based analysis ('With GitHub Actions'), NOT
   automatic analysis, or the two will conflict. SonarCloud has no
   PowerShell support either.
+- Dependabot (`.github/dependabot.yml`): weekly github-actions updates
+  grouped into a single PR (labels `dependencies`/`ci`, commit prefix
+  `ci`); dormant nuget entries per csproj for future PackageReferences.
+  PowerShell module deps (Pester etc.) have no Dependabot ecosystem -
+  MinimumVersion gates in the bootstrap are the manual mechanism. The
+  `dependencies` and `ci` labels must exist in the repo or Dependabot
+  errors when opening PRs.
 - Publishing (`.github/workflows/Publish.yml`) triggers on a **published
   GitHub Release**. It runs the full gate, then publishes every module whose
   manifest version is newer than the gallery version (idempotent, safe to
