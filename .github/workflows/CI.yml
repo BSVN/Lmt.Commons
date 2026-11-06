@@ -62,14 +62,13 @@ jobs:
           # fails the job fails - never a silent skip.
           winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
 
-          # The winget community package is a portable install: the exe lands
-          # under WinGet\Packages with a symlink in WinGet\Links (winget adds
-          # Links to the user PATH registry, but not to this process).
-          # Resolve from the known candidates instead of hardcoding one.
+          # The winget package is an MSIX (ohmyposh.cli): the executable is
+          # exposed through the app execution alias in WindowsApps. Keep the
+          # other layouts as candidates in case the manifest changes shape.
           $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\oh-my-posh.exe'),
             (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\oh-my-posh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\bin\oh-my-posh.exe'),
-            (Join-Path $env:ProgramFiles 'oh-my-posh\bin\oh-my-posh.exe')
+            (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\bin\oh-my-posh.exe')
           )
           $exePath = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $exePath) {
@@ -84,12 +83,20 @@ jobs:
           Write-Host "oh-my-posh $reported installed via winget ($exePath)"
           Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $exePath)
 
-          # Themes: the portable winget package does not ship them. When a
-          # classic installer layout exists, point the stress test at the
-          # glyph-rich atomic theme; otherwise the test renders the default
-          # theme (which still emits nerd-font multi-byte glyphs).
-          $themesDir = Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\themes'
-          if (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json')) {
+          # The MSIX ships the themes inside the package directory; point the
+          # stress test at the glyph-rich atomic theme when resolvable. Any
+          # miss falls back to the default theme (still nerd-font multi-byte).
+          $themeCandidates = @()
+          try {
+            $appx = Get-AppxPackage -Name 'ohmyposh.cli' -ErrorAction Stop
+            if ($appx) { $themeCandidates += (Join-Path $appx.InstallLocation 'themes') }
+          }
+          catch {
+            Write-Verbose "Get-AppxPackage unavailable: $($_.Exception.Message)"
+          }
+          $themeCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\themes')
+          $themesDir = $themeCandidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'atomic.omp.json') } | Select-Object -First 1
+          if ($themesDir) {
             Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
             Write-Host "POSH_THEMES_PATH set; the stress test will use atomic.omp.json"
           }
