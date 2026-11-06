@@ -4,6 +4,18 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.SystemManagement 0.2.0] - 2026-11-06
+
+### Changed
+
+- Local Windows suspend now calls the compiled
+  `Bsn.SystemManagement.Interop.PowerProf` assembly (netstandard2.0,
+  loaded via RequiredAssemblies); the self-contained
+  `scripts/Suspend-Action.ps1` remains the remote-execution payload and
+  the Unix implementation.
+- Now depends on the shared `Bsn.Common` module (RequiredModules) for
+  operating-system detection via the native `BsnOperatingSystem` enum.
+
 ## [Bsn.Host 0.1.0] - 2026-11-05
 
 ### Added
@@ -92,7 +104,7 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 - `Invoke-BsnCastRender` gained cross-platform unit tests using fake
   `agg`/`ffmpeg` shims on PATH.
 
-## [0.1.0] - 2026-11-05
+## [Bsn.SystemManagement 0.1.0] - 2026-11-05
 
 ### Added
 

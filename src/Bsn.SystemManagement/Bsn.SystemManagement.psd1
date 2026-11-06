@@ -1,6 +1,6 @@
 @{
     RootModule = 'Bsn.SystemManagement.psm1'
-    ModuleVersion = '0.1.1'
+    ModuleVersion = '0.2.0'
     GUID = 'b7d64e3a-2f4e-4f8a-9a1d-3c5e7a9b1f02'
     Author = 'BSVN'
     CompanyName = 'BSVN'
@@ -22,7 +22,7 @@
             Tags = @('System', 'Management', 'Power', 'Sleep', 'Hibernate', 'Suspend', 'CrossPlatform', 'Windows', 'Linux', 'macOS', 'BSVN', 'Lmt')
             LicenseUri = 'https://github.com/BSVN/Lmt.Commons/blob/main/LICENSE'
             ProjectUri = 'https://github.com/BSVN/Lmt.Commons'
-            ReleaseNotes = 'Suspend-Computer now uses the compiled Bsn.SystemManagement interop assembly locally; the self-contained action script remains for remoting. See https://github.com/BSVN/Lmt.Commons/blob/main/CHANGELOG.md.'
+            ReleaseNotes = 'Suspend-Computer now uses the compiled Bsn.SystemManagement interop assembly locally (self-contained action script remains for remoting) and depends on the shared Bsn.Common module. See https://github.com/BSVN/Lmt.Commons/blob/main/CHANGELOG.md.'
         }
     }
 }

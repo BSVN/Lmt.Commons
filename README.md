@@ -1,6 +1,9 @@
 # LMT.Commons — the BSN PowerShell module family
 
 [![CI](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml/badge.svg)](https://github.com/BSVN/Lmt.Commons/actions/workflows/CI.yml)
+[![Bsn.Common](https://img.shields.io/powershellgallery/v/Bsn.Common.svg)](https://www.powershellgallery.com/packages/Bsn.Common/)
+[![Bsn.Host](https://img.shields.io/powershellgallery/v/Bsn.Host.svg)](https://www.powershellgallery.com/packages/Bsn.Host/)
+[![Bsn.SystemManagement](https://img.shields.io/powershellgallery/v/Bsn.SystemManagement.svg)](https://www.powershellgallery.com/packages/Bsn.SystemManagement/)
 
 This repository is the single home for the **Bsn.* PowerShell modules**
 published to the [PowerShell Gallery](https://www.powershellgallery.com/) —
@@ -12,9 +15,9 @@ one command.
 
 | Module                                                            | Description                                                            | Status |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ------ |
-| [Bsn.SystemManagement](src/Bsn.SystemManagement)                  | Cross-platform basic system management: sleep/hibernate (`Suspend-Computer`) | 0.1.0 |
-| [Bsn.Host](src/Bsn.Host)                                          | Terminal session recording incl. TUI apps: `Start-`/`Stop-`/`Show-InteractiveTranscript` (asciicast v2, optional GIF/WebM/MP4 render) | 0.1.0 (branch) |
-| [Bsn.Common](src/Bsn.Common)                                      | Shared helpers for the Bsn.* module family (`Get-BsnOperatingSystem`) | 0.1.0 (branch) |
+| [Bsn.Common](src/Bsn.Common)                                      | Shared helpers for the Bsn.* module family (`Get-BsnOperatingSystem`) | 0.1.0 |
+| [Bsn.Host](src/Bsn.Host)                                          | Terminal session recording incl. TUI apps: `Start-`/`Stop-`/`Show-InteractiveTranscript` (asciicast v2/v3, optional GIF/WebM/MP4 render) | 0.1.0 |
+| [Bsn.SystemManagement](src/Bsn.SystemManagement)                  | Cross-platform basic system management: sleep/hibernate (`Suspend-Computer`) | 0.2.0 |
 
 ## Install
 
