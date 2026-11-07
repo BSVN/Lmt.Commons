@@ -138,6 +138,11 @@ using module Bsn.Common
       process output around the pseudo-console. Run from an interactive
       console session for full capture.
     - Non-console hosts receive a warning that recording may not work.
+    - On Windows, the console output codepage is temporarily switched to
+      UTF-8 while recording (the live proxy writes UTF-8 bytes) and
+      restored afterwards, so the live view renders byte-writing TUIs
+      correctly even on OEM-codepage consoles (cmd, Windows PowerShell
+      5.1 hosts).
 
     Implements https://github.com/PowerShell/PowerShell/issues/28353
     following the parameter and format semantics of PowerShell-RFC#421 at

@@ -83,6 +83,12 @@ LONG DESCRIPTION
     process output around the pseudo-console. Run from an interactive
     console session for full capture.
 
+    On Windows the console output codepage is temporarily switched to
+    UTF-8 while recording (the live proxy writes UTF-8 bytes) and
+    restored afterwards, so the live view renders byte-writing TUIs
+    correctly even on OEM-codepage consoles such as cmd or the Windows
+    PowerShell 5.1 host.
+
   SCENARIOS
 
     - Audit and compliance records of privileged interactive sessions

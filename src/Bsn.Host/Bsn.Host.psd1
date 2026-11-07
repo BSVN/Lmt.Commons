@@ -1,6 +1,6 @@
 @{
     RootModule = 'Bsn.Host.psm1'
-    ModuleVersion = '0.2.2'
+    ModuleVersion = '0.2.3'
     GUID = '9d84a7b8-1f2b-4d60-a4bd-3d7ef1d9f337'
     Author = 'BSVN'
     CompanyName = 'BSVN'
@@ -21,7 +21,7 @@
             Tags = @('BSVN', 'Lmt', 'Host', 'Transcript', 'Recording', 'Terminal', 'Session', 'Asciicast', 'Asciinema', 'TUI', 'Audit', 'Screencast')
             LicenseUri = 'https://github.com/BSVN/Lmt.Commons/blob/main/LICENSE'
             ProjectUri = 'https://github.com/BSVN/Lmt.Commons'
-            ReleaseNotes = 'Bug fix release: recordings of byte-writing TUI applications (OpenCode and other Go/Node TUIs) are no longer corrupted to codepage mojibake - the recorded session bootstraps the console codepage to UTF-8; interop assembly loading is loader-managed (Import-Module -Force reuses the loaded assembly; cross-version imports get clear guidance and a session restart is required to switch versions). Also includes the 0.2.1 fixes: multi-byte UTF-8 survives chunk boundaries; cast files stay valid when the recording process dies; -Command values round-trip safely through pwsh -EncodedCommand; recording with both stdin and stdout redirected is a terminating error. Fixes issues #5, #6, #7, #8 and #15.'
+            ReleaseNotes = 'Bug fix release: the LIVE recording view (what you watch while recording) no longer turns box-drawing text into CP437 mojibake on OEM-codepage consoles (cmd, Windows PowerShell 5.1 hosts) - the engine switches the console to UTF-8 for the recording and restores it afterwards; the cast file was always correct. Also includes the 0.2.2 fixes: recordings of byte-writing TUI applications (OpenCode and other Go/Node TUIs) bootstrap the console codepage to UTF-8; interop assembly loading is loader-managed (Import-Module -Force reuses the loaded assembly; cross-version imports get clear guidance). Fixes issues #5 and #15.'
         }
     }
 }

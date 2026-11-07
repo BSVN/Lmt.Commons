@@ -119,6 +119,12 @@ namespace Bsn.Host.Interop
         private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint GetConsoleOutputCP();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetConsoleOutputCP(uint wCodePageID);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CreatePipe(out IntPtr hReadPipe, out IntPtr hWritePipe, ref SECURITY_ATTRIBUTES lpPipeAttributes, uint nSize);
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -176,6 +182,22 @@ namespace Bsn.Host.Interop
 
             uint savedInputMode;
             bool hadConsoleMode = GetConsoleMode(hRealIn, out savedInputMode);
+
+            // The live proxy writes the ConPTY output stream to the real console as
+            // raw UTF-8 bytes (the same bytes that go into the cast). The console
+            // decodes those bytes with its OUTPUT CODEPAGE: on an OEM-codepage
+            // console (437 - cmd, Windows PowerShell 5.1, fresh hidden consoles)
+            // the UTF-8 text of byte-writing TUIs renders as CP437 mojibake
+            // ('Gamma-ohmega-acute') in the LIVE view even though the cast is
+            // clean, because the console - not the recorder - decodes the bytes.
+            // Switch the console to UTF-8 for the duration of the recording and
+            // restore the original codepage afterwards; this is the console-host
+            // counterpart of the wrapper's codepage bootstrap on the pseudo
+            // console side (issue #5). A return value of 0 means the process has
+            // no attached console - nothing to switch or restore.
+            uint savedOutputCodePage = GetConsoleOutputCP();
+            bool changedOutputCodePage = (savedOutputCodePage != 0) && (savedOutputCodePage != 65001);
+            if (changedOutputCodePage) { SetConsoleOutputCP(65001); }
 
             short width = 120;
             short height = 30;
@@ -326,6 +348,7 @@ namespace Bsn.Host.Interop
                 state.Stop = true;
                 clock.Stop();
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, savedInputMode); }
+                if (changedOutputCodePage) { SetConsoleOutputCP(savedOutputCodePage); }
                 if (cast != null) { cast.Dispose(); }
                 if (childThread != IntPtr.Zero) { CloseHandle(childThread); }
                 if (childProcess != IntPtr.Zero) { CloseHandle(childProcess); }
