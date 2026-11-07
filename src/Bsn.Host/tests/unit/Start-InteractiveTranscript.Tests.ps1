@@ -266,22 +266,40 @@ Describe 'Start-InteractiveTranscript' {
             $commandLine | Should -BeLike '*-EncodedCommand*'
         }
 
-        It 'bootstraps the console codepage to UTF-8 in the recorded session (issue #5)' {
+        It 'bootstraps the console codepage to UTF-8 in the recorded command session (issue #5)' {
             # https://github.com/BSVN/Lmt.Commons/issues/5
             # Byte-writing TUIs (Go/Bubble Tea such as OpenCode) emit UTF-8
             # bytes that OEM-codepage-decoding conhosts mangle; the recorded
             # session must set the console codepage to UTF-8 before the
-            # command runs (the programmatic 'chcp 65001').
-            $commandLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine -Command 'echo hello' }
+            # command runs (the programmatic 'chcp 65001'). The command is
+            # always wrapped in pwsh, so this holds on every platform.
+            $commandLine = & (Get-Module -Name 'Bsn.Host') { param($c) Get-BsnRecordingCommandLine -Command $c } 'echo hello'
             $encoded = [regex]::Match($commandLine, '-EncodedCommand ([A-Za-z0-9+/=]+)').Groups[1].Value
             $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
             $decoded.Contains('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
             $decoded.Contains('[Console]::InputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
             $decoded.Contains('echo hello') | Should -BeTrue
+        }
+
+        It 'bootstraps UTF-8 and auto-imports Bsn.Host in a PowerShell interactive session (issue #5)' {
+            # The interactive shell is resolved per platform (pwsh/powershell
+            # on Windows, $env:SHELL on Unix); mock it so the PowerShell
+            # branch is exercised deterministically on every OS.
+            Mock -CommandName Get-BsnDefaultShell -ModuleName 'Bsn.Host' { 'C:\Program Files\PowerShell\7\pwsh.exe' }
 
             $interactiveLine = & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine }
             $interactiveLine.Contains('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8') | Should -BeTrue
             $interactiveLine.Contains('Import-Module Bsn.Host') | Should -BeTrue
+            $interactiveLine -like '*-NoLogo -NoExit*' | Should -BeTrue
+        }
+
+        It 'returns the bare shell path when the interactive shell is not PowerShell' {
+            # Unix terminals are natively UTF-8 - the codepage bootstrap is a
+            # Windows conhost concern - so a non-PowerShell default shell is
+            # started as-is.
+            Mock -CommandName Get-BsnDefaultShell -ModuleName 'Bsn.Host' { '/bin/bash' }
+
+            & (Get-Module -Name 'Bsn.Host') { Get-BsnRecordingCommandLine } | Should -Be '/bin/bash'
         }
 
         It 'preserves shell metacharacters through Base64 round-trip' -TestCases @(

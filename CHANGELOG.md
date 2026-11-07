@@ -65,9 +65,12 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Private `Import-BsnInteropAssembly` helper used by the Bsn.* module
-  loaders: reuses an already-loaded same-version interop assembly on
-  `Import-Module -Force`, and fails with actionable guidance when a
-  different version is already in the session.
+  loaders (which pass their module root; the DLL is resolved from
+  `<module>/lib/<name>.dll`): reuses an already-loaded same-version
+  interop assembly on `Import-Module -Force`, and fails with actionable
+  guidance when a different version is already in the session.
+  Unit tests cover the missing-DLL, fresh-load, same-version reuse and
+  cross-version guidance paths.
   [#15](https://github.com/BSVN/Lmt.Commons/issues/15)
 
 ## [Bsn.Host 0.2.1] - 2026-11-07

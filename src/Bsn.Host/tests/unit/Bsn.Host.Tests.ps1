@@ -25,16 +25,13 @@ Describe 'Bsn.Host manifest' {
     }
 
     It 'stamps the interop assembly with the manifest version (issue #15)' {
-        # https://github.com/BSVN/Lmt.Commons/issues/15
-        # Every shipped module version must carry a distinct assembly
-        # identity: with the default AssemblyVersion 1.0.0.0 in all of them,
-        # Import-Module -Force after Update-Module fails with
-        # FileLoadException (same identity already loaded in the process).
-        $dllPath = Join-Path -Path $moduleRoot -ChildPath 'lib\Bsn.Host.dll'
+        # With the default AssemblyVersion 1.0.0.0 in every release the loader
+        # could not tell versions apart: Import-Module -Force after
+        # Update-Module failed with FileLoadException (issue #15).
+        $dllPath = Join-Path -Path $moduleRoot -ChildPath 'lib/Bsn.Host.dll'
         Test-Path -LiteralPath $dllPath | Should -BeTrue
-        $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version
-        $manifestVersion = (Test-ModuleManifest -Path $script:ManifestPath).Version
-        $assemblyVersion.ToString(3) | Should -Be $manifestVersion.ToString()
+        [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version.ToString(3) |
+            Should -Be (Test-ModuleManifest -Path $script:ManifestPath).Version.ToString()
     }
 }
 

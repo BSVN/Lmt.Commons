@@ -78,7 +78,8 @@ function Get-BsnOperatingSystem {
     ("Assembly with same name is already loaded").
 
     The Bsn.* modules load their interop assemblies through this helper
-    instead of RequiredAssemblies:
+    instead of RequiredAssemblies. The DLL is resolved from the calling
+    module's own lib directory ('<ModuleRoot>/lib/<AssemblyName>.dll'):
     - when an assembly with the same name AND version is already loaded
       (Import-Module -Force of the same version), it is reused silently;
     - when a DIFFERENT version is already loaded (Import-Module after
@@ -87,7 +88,7 @@ function Get-BsnOperatingSystem {
       process - this is why the interop assemblies are stamped with the
       module version at build time (build.ps1 passes -p:Version from the
       manifest; guard tests assert the equality);
-    - otherwise the assembly is loaded from the given path.
+    - otherwise the assembly is loaded from the resolved path.
 
     https://github.com/BSVN/Lmt.Commons/issues/15
 
@@ -98,19 +99,19 @@ function Import-BsnInteropAssembly {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path,
+        [string]$ModuleRoot,
 
         [Parameter(Mandatory = $true)]
         [string]$AssemblyName
     )
 
-    if (-not (Test-Path -LiteralPath $Path)) {
-        throw ("The interop assembly is missing at '{0}'. Run './build.ps1' to build it, or reinstall the module." -f $Path)
+    $assemblyPath = Join-Path -Path (Join-Path -Path $ModuleRoot -ChildPath 'lib') -ChildPath ($AssemblyName + '.dll')
+    if (-not (Test-Path -LiteralPath $assemblyPath)) {
+        throw ("The interop assembly is missing at '{0}'. Run './build.ps1' to build it, or reinstall the module." -f $assemblyPath)
     }
 
-    $fileVersion = [System.Reflection.AssemblyName]::GetAssemblyName($Path).Version
-    $loadedAssemblies = @([System.AppDomain]::CurrentDomain.GetAssemblies() |
-        Where-Object { $_.GetName().Name -eq $AssemblyName })
+    $fileVersion = [System.Reflection.AssemblyName]::GetAssemblyName($assemblyPath).Version
+    $loadedAssemblies = @(Get-BsnLoadedInteropAssembly -AssemblyName $AssemblyName)
     if ($loadedAssemblies.Count -gt 0) {
         $loadedVersion = $loadedAssemblies[0].GetName().Version
         if ($loadedVersion -ne $fileVersion) {
@@ -121,5 +122,27 @@ function Import-BsnInteropAssembly {
         return
     }
 
-    Add-Type -Path $Path
+    Add-Type -Path $assemblyPath
+}
+
+<#
+.SYNOPSIS
+    Lists the loaded assemblies with the given simple assembly name.
+
+.DESCRIPTION
+    Private seam between Import-BsnInteropAssembly and the AppDomain.
+    Isolated into a function so unit tests can Mock it (-ModuleName
+    Bsn.Common) to simulate a differently-versioned assembly already
+    being loaded - the static AppDomain state itself cannot be faked.
+#>
+function Get-BsnLoadedInteropAssembly {
+    [CmdletBinding()]
+    [OutputType('System.Reflection.Assembly')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyName
+    )
+
+    @([System.AppDomain]::CurrentDomain.GetAssemblies() |
+        Where-Object { $_.GetName().Name -eq $AssemblyName })
 }

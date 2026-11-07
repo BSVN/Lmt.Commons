@@ -17,16 +17,13 @@ Describe 'Bsn.SystemManagement manifest' {
     }
 
     It 'stamps the interop assembly with the manifest version (issue #15)' {
-        # https://github.com/BSVN/Lmt.Commons/issues/15
-        # Every shipped module version must carry a distinct assembly
-        # identity: with the default AssemblyVersion 1.0.0.0 in all of them,
-        # Import-Module -Force after Update-Module fails with
-        # FileLoadException (same identity already loaded in the process).
-        $dllPath = Join-Path -Path $moduleRoot -ChildPath 'lib\Bsn.SystemManagement.dll'
+        # Same guard as Bsn.Host (issue #15): the DLL's AssemblyVersion must
+        # follow the manifest, otherwise the loader's version checks cannot
+        # distinguish releases.
+        $dllPath = Join-Path -Path $moduleRoot -ChildPath 'lib/Bsn.SystemManagement.dll'
         Test-Path -LiteralPath $dllPath | Should -BeTrue
-        $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version
-        $manifestVersion = (Test-ModuleManifest -Path $script:ManifestPath).Version
-        $assemblyVersion.ToString(3) | Should -Be $manifestVersion.ToString()
+        [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version.ToString(3) |
+            Should -Be (Test-ModuleManifest -Path $script:ManifestPath).Version.ToString()
     }
 }
 
