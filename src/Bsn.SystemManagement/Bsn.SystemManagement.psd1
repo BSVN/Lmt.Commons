@@ -1,6 +1,6 @@
 @{
     RootModule = 'Bsn.SystemManagement.psm1'
-    ModuleVersion = '0.2.0'
+    ModuleVersion = '0.2.1'
     GUID = 'b7d64e3a-2f4e-4f8a-9a1d-3c5e7a9b1f02'
     Author = 'BSVN'
     CompanyName = 'BSVN'
@@ -9,9 +9,8 @@
     PowerShellVersion = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
     RequiredModules = @(
-        @{ ModuleName = 'Bsn.Common'; ModuleVersion = '0.1.0' }
+        @{ ModuleName = 'Bsn.Common'; ModuleVersion = '0.1.1' }
     )
-    RequiredAssemblies = @('lib/Bsn.SystemManagement.dll')
     FunctionsToExport = @('Suspend-Computer')
     CmdletsToExport = @()
     VariablesToExport = @()
@@ -22,7 +21,7 @@
             Tags = @('System', 'Management', 'Power', 'Sleep', 'Hibernate', 'Suspend', 'CrossPlatform', 'Windows', 'Linux', 'macOS', 'BSVN', 'Lmt')
             LicenseUri = 'https://github.com/BSVN/Lmt.Commons/blob/main/LICENSE'
             ProjectUri = 'https://github.com/BSVN/Lmt.Commons'
-            ReleaseNotes = 'Suspend-Computer now uses the compiled Bsn.SystemManagement interop assembly locally (self-contained action script remains for remoting) and depends on the shared Bsn.Common module. See https://github.com/BSVN/Lmt.Commons/blob/main/CHANGELOG.md.'
+            ReleaseNotes = 'Interop assembly loading is now managed by the module loader (via Bsn.Common 0.1.1): re-importing with Import-Module -Force reuses the already-loaded assembly, and importing after Update-Module fails with clear guidance instead of a raw FileLoadException (a session restart is still required to switch assembly versions). The interop assembly now carries the module version as its assembly version. Suspend-Computer behavior is unchanged. See https://github.com/BSVN/Lmt.Commons/blob/main/CHANGELOG.md and issue #15.'
         }
     }
 }

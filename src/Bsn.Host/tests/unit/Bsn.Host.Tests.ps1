@@ -23,6 +23,16 @@ Describe 'Bsn.Host manifest' {
         $manifest = Test-ModuleManifest -Path $script:ManifestPath
         ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
     }
+
+    It 'stamps the interop assembly with the manifest version (issue #15)' {
+        # With the default AssemblyVersion 1.0.0.0 in every release the loader
+        # could not tell versions apart: Import-Module -Force after
+        # Update-Module failed with FileLoadException (issue #15).
+        $dllPath = Join-Path -Path $moduleRoot -ChildPath 'lib/Bsn.Host.dll'
+        Test-Path -LiteralPath $dllPath | Should -BeTrue
+        [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version.ToString(3) |
+            Should -Be (Test-ModuleManifest -Path $script:ManifestPath).Version.ToString()
+    }
 }
 
 Describe 'Bsn.Host module' {

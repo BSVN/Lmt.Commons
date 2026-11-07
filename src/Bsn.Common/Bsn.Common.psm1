@@ -65,3 +65,84 @@ function Get-BsnOperatingSystem {
         return [BsnOperatingSystem]::Unknown
     }
 }
+
+<#
+.SYNOPSIS
+    Loads a module interop assembly with same-session reimport tolerance.
+
+.DESCRIPTION
+    PowerShell's assembly loading dedupes by simple assembly name, so a
+    module that ships its DLL through RequiredAssemblies (or plain
+    Add-Type) cannot be re-imported from a different installed version in
+    the same session: the second load fails with FileLoadException
+    ("Assembly with same name is already loaded").
+
+    The Bsn.* modules load their interop assemblies through this helper
+    instead of RequiredAssemblies. The DLL is resolved from the calling
+    module's own lib directory ('<ModuleRoot>/lib/<AssemblyName>.dll'):
+    - when an assembly with the same name AND version is already loaded
+      (Import-Module -Force of the same version), it is reused silently;
+    - when a DIFFERENT version is already loaded (Import-Module after
+      Update-Module), it fails with actionable guidance, because
+      PowerShell cannot host two versions of the same assembly in one
+      process - this is why the interop assemblies are stamped with the
+      module version at build time (build.ps1 passes -p:Version from the
+      manifest; guard tests assert the equality);
+    - otherwise the assembly is loaded from the resolved path.
+
+    https://github.com/BSVN/Lmt.Commons/issues/15
+
+    Kept private (consumer module loaders invoke it through this module's
+    scope) so it does not extend Bsn.Common's public command surface.
+#>
+function Import-BsnInteropAssembly {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModuleRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyName
+    )
+
+    $assemblyPath = Join-Path -Path (Join-Path -Path $ModuleRoot -ChildPath 'lib') -ChildPath ($AssemblyName + '.dll')
+    if (-not (Test-Path -LiteralPath $assemblyPath)) {
+        throw ("The interop assembly is missing at '{0}'. Run './build.ps1' to build it, or reinstall the module." -f $assemblyPath)
+    }
+
+    $fileVersion = [System.Reflection.AssemblyName]::GetAssemblyName($assemblyPath).Version
+    $loadedAssemblies = @(Get-BsnLoadedInteropAssembly -AssemblyName $AssemblyName)
+    if ($loadedAssemblies.Count -gt 0) {
+        $loadedVersion = $loadedAssemblies[0].GetName().Version
+        if ($loadedVersion -ne $fileVersion) {
+            throw ("Cannot load {0} version {1}: version {2} is already loaded in this session (from '{3}'). PowerShell cannot host two versions of the same assembly in one process; restart the session (or open a new one) and import the module again. https://github.com/BSVN/Lmt.Commons/issues/15" -f $AssemblyName, $fileVersion, $loadedVersion, $loadedAssemblies[0].Location)
+        }
+
+        # Same version already loaded (e.g. Import-Module -Force): reuse it.
+        return
+    }
+
+    Add-Type -Path $assemblyPath
+}
+
+<#
+.SYNOPSIS
+    Lists the loaded assemblies with the given simple assembly name.
+
+.DESCRIPTION
+    Private seam between Import-BsnInteropAssembly and the AppDomain.
+    Isolated into a function so unit tests can Mock it (-ModuleName
+    Bsn.Common) to simulate a differently-versioned assembly already
+    being loaded - the static AppDomain state itself cannot be faked.
+#>
+function Get-BsnLoadedInteropAssembly {
+    [CmdletBinding()]
+    [OutputType('System.Reflection.Assembly')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyName
+    )
+
+    @([System.AppDomain]::CurrentDomain.GetAssemblies() |
+        Where-Object { $_.GetName().Name -eq $AssemblyName })
+}
