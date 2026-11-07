@@ -157,7 +157,11 @@ before:
   UTF-8 so the live proxy view decodes correctly on OEM-codepage
   consoles), close the PTY-side pipe
   handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
-  as UTF-8 without BOM with LF line endings. Cast files support asciicast
+  as UTF-8 without BOM with LF line endings.
+  `Show-InteractiveTranscript` follows the same save/switch/restore
+  discipline for its playback writes (Windows PowerShell 5.1 encodes
+  `[Console]` output through the console output codepage, which turns
+  CP437-unrepresentable characters into '?'). Cast files support asciicast
   v2 (absolute event times) and v3 (intervals since the previous event,
   millisecond precision, trailing 'x' exit event) - keep both writers in
   sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and

@@ -38,7 +38,11 @@ LONG DESCRIPTION
     Show-InteractiveTranscript plays recordings back in the console with
     original or adjusted timing (-Speed, -IdleTimeLimit). Recordings also
     play anywhere the open asciicast v2 ecosystem works, for example
-    'asciinema play <file>.cast'.
+    'asciinema play <file>.cast'. On Windows the console output encoding
+    is temporarily switched to UTF-8 during playback and restored
+    afterwards, so characters outside CP437 (heavy box-drawing borders)
+    do not degrade to '?' on OEM-codepage consoles or in Windows
+    PowerShell 5.1 hosts.
 
   RECORDING OPTIONS (RFC 421 SEMANTICS)
 

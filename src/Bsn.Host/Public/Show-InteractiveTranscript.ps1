@@ -12,6 +12,12 @@
     Input ('i') events are not replayed; resize ('r') events are ignored
     (the current console keeps its own size).
 
+    On Windows the console output encoding is temporarily switched to
+    UTF-8 for the playback and restored afterwards: Windows PowerShell
+    5.1 hosts write [Console] output through the console output codepage,
+    which would otherwise render characters outside CP437 (e.g. heavy
+    box-drawing borders) as literal '?'.
+
 .PARAMETER Path
     The asciicast v2 (.cast) file to play back.
 
@@ -57,25 +63,62 @@ function Show-InteractiveTranscript {
     process {
         $timeline = Get-BsnCastTimeline -Path $Path
 
-        $previousTime = 0.0
-        foreach ($timelineEvent in $timeline.Events) {
-            $eventTime = [double]$timelineEvent[0]
-            $delaySeconds = $eventTime - $previousTime
-            if (($IdleTimeLimit -gt 0) -and ($delaySeconds -gt $IdleTimeLimit)) {
-                $delaySeconds = $IdleTimeLimit
+        # Windows PowerShell 5.1 (.NET Framework) writes [Console] output
+        # through the console OUTPUT CODEPAGE (WriteFile), so playback
+        # characters outside that codepage - e.g. OpenCode's heavy
+        # box-drawing border U+2503 on an OEM-codepage (437) console - are
+        # replaced with literal '?' before rendering, while ASCII and CP437
+        # blocks survive (the recorded cast itself is lossless UTF-8; pwsh 7
+        # writes via WriteConsoleW and is unaffected). Switch the console
+        # output encoding to UTF-8 for the duration of the playback and
+        # restore the original afterwards - the same restore discipline the
+        # recording engine uses for the live proxy view (issue #5).
+        $previousOutputEncoding = [Console]::OutputEncoding
+        $changedOutputEncoding = $false
+        if ($previousOutputEncoding.CodePage -ne 65001) {
+            try {
+                [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+                $changedOutputEncoding = $true
             }
-            $delaySeconds = $delaySeconds / $Speed
-
-            if ($delaySeconds -gt 0) {
-                Start-Sleep -Milliseconds ([int]($delaySeconds * 1000))
+            catch {
+                # No attached console or a host that refuses the switch (some
+                # IDE/redirected setups): playback continues with the current
+                # encoding, which is what previous versions did.
+                Write-Verbose -Message ('Could not switch the console output encoding to UTF-8 for playback: ' + $_.Exception.Message)
             }
+        }
 
-            $eventType = [string]$timelineEvent[1]
-            if ($eventType -eq 'o') {
-                [Console]::Write([string]$timelineEvent[2])
+        try {
+            $previousTime = 0.0
+            foreach ($timelineEvent in $timeline.Events) {
+                $eventTime = [double]$timelineEvent[0]
+                $delaySeconds = $eventTime - $previousTime
+                if (($IdleTimeLimit -gt 0) -and ($delaySeconds -gt $IdleTimeLimit)) {
+                    $delaySeconds = $IdleTimeLimit
+                }
+                $delaySeconds = $delaySeconds / $Speed
+
+                if ($delaySeconds -gt 0) {
+                    Start-Sleep -Milliseconds ([int]($delaySeconds * 1000))
+                }
+
+                $eventType = [string]$timelineEvent[1]
+                if ($eventType -eq 'o') {
+                    [Console]::Write([string]$timelineEvent[2])
+                }
+
+                $previousTime = $eventTime
             }
-
-            $previousTime = $eventTime
+        }
+        finally {
+            if ($changedOutputEncoding) {
+                try {
+                    [Console]::OutputEncoding = $previousOutputEncoding
+                }
+                catch {
+                    Write-Verbose -Message ('Could not restore the console output encoding: ' + $_.Exception.Message)
+                }
+            }
         }
     }
 }
