@@ -83,12 +83,10 @@ function Start-BsnUnixPtyRecording {
             $outputPath = [System.IO.Path]::GetTempFileName()
             $temporaryPaths = @($timingPath, $outputPath)
 
-            # No trailing positional typescript file: --log-out already captures
-            # the stream, and util-linux 2.41 (Ubuntu 26.04) rejects the
-            # combination of --log-out and a positional file with 'unexpected
-            # number of arguments', which made every recording come back empty.
-            # Older util-linux versions accept the options-only form too.
-            $processInfo.Arguments = ('-q -f -e -c "{0}" --log-timing "{1}" --log-out "{2}"' -f $recordedCommand, $timingPath, $outputPath)
+            # The invocation shape depends on the installed script(1): probe it
+            # (util-linux 2.39+/2.41 reject the positional typescript file that
+            # older releases accept - see Resolve-BsnScriptInvocation).
+            $processInfo.Arguments = Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath
         }
         else {
             $rawPath = [System.IO.Path]::GetTempFileName()

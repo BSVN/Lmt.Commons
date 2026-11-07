@@ -12,7 +12,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, ubuntu-latest, macos-latest ]
+        os: [ windows-latest, ubuntu-latest, ubuntu-24.04, macos-latest ]
+      # ubuntu-24.04 is pinned on purpose: ubuntu-latest follows the newest LTS
+      # (26.04, util-linux 2.41), while 24.04 keeps an older script(1) and
+      # util-linux generation in the matrix - the Unix script(1) engine has
+      # version-sensitive invocation compatibility (see Start-BsnUnixPtyRecording
+      # and Get-BsnScriptInvocationArguments), and the Unix -Command system test
+      # pins that behavior on both generations.
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write   # Codecov OIDC token exchange (tokenless default-branch uploads)
