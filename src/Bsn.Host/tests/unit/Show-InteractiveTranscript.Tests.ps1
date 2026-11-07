@@ -144,9 +144,19 @@ Show-InteractiveTranscript -Path $CastPath
 
         $childOutputPath = Join-Path -Path $TestDrive -ChildPath 'show-oem-out.txt'
         $childErrorPath = Join-Path -Path $TestDrive -ChildPath 'show-oem-err.txt'
-        $null = Start-Process -FilePath (Get-Process -Id $PID).Path `
-            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $childScriptPath, '-ModuleRoot', $moduleRoot, '-CastPath', $unicodeCastPath) `
-            -WindowStyle Hidden -RedirectStandardOutput $childOutputPath -RedirectStandardError $childErrorPath -PassThru -Wait
+        # -WindowStyle is Windows-only (Unix pwsh rejects the parameter); on
+        # Unix the child simply inherits the harness's redirected stdio, which
+        # is exactly what the lossy-encoding scenario needs.
+        $childStartArguments = @{
+            FilePath = (Get-Process -Id $PID).Path
+            ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $childScriptPath, '-ModuleRoot', $moduleRoot, '-CastPath', $unicodeCastPath)
+            RedirectStandardOutput = $childOutputPath
+            RedirectStandardError = $childErrorPath
+            PassThru = $true
+            Wait = $true
+        }
+        if ($IsWindows) { $childStartArguments.WindowStyle = 'Hidden' }
+        $null = Start-Process @childStartArguments
 
         # The playback switched the console output encoding to UTF-8 for the
         # write: the heavy box characters arrive as UTF-8, not as '?'.
