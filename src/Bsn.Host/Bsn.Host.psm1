@@ -32,17 +32,6 @@ if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {
     }
 }
 
-# Load the interop assembly through Bsn.Common's private loader instead of the
-# manifest's RequiredAssemblies (issue #15): a same-version reimport
-# (Import-Module -Force) reuses the loaded assembly, and a cross-version
-# reimport (after Update-Module) fails with actionable guidance instead of a
-# raw FileLoadException. Pick the NEWEST loaded Bsn.Common: after an update
-# the session may hold the old gallery copy and the newly required version
-# side by side, and invoking an array of module infos would stringify into a
-# bogus command.
-$commonModule = Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1
-& $commonModule { param($root, $name) Import-BsnInteropAssembly -ModuleRoot $root -AssemblyName $name } $script:ModuleRoot 'Bsn.Host'
-
 # 'using module Bsn.Common' in the function files resolves by name through
 # PSModulePath at parse time - even when the module is already loaded - so make
 # the repo sibling discoverable before those files are dot-sourced.
@@ -61,3 +50,15 @@ $functionFiles = Get-ChildItem -Path $functionSearchPaths -Filter '*.ps1' -Recur
 foreach ($functionFile in $functionFiles) {
     . $functionFile.FullName
 }
+
+# Load the interop assembly through Bsn.Common's private loader instead of the
+# manifest's RequiredAssemblies (issue #15): a same-version reimport
+# (Import-Module -Force) reuses the loaded assembly, and a cross-version
+# reimport (after Update-Module) fails with actionable guidance instead of a
+# raw FileLoadException. Pick the NEWEST loaded Bsn.Common: after an update
+# the session may hold the old gallery copy and the newly required version
+# side by side, and invoking an array of module infos would stringify into a
+# bogus command. The engine types resolve at call time, so loading after the
+# function files are dot-sourced matches the RequiredAssemblies timing.
+$commonModule = Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1
+& $commonModule { param($root, $name) Import-BsnInteropAssembly -ModuleRoot $root -AssemblyName $name } $script:ModuleRoot 'Bsn.Host'

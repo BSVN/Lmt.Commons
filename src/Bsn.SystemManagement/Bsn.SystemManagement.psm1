@@ -26,13 +26,6 @@ if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {
     }
 }
 
-# Load the interop assembly through Bsn.Common's private loader (issue #15) -
-# full rationale in Bsn.Host.psm1: same-version reimports reuse the loaded
-# assembly, cross-version reimports get actionable guidance. The NEWEST loaded
-# Bsn.Common instance wins (the session can hold several after an update).
-$commonModule = Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1
-& $commonModule { param($root, $name) Import-BsnInteropAssembly -ModuleRoot $root -AssemblyName $name } $script:ModuleRoot 'Bsn.SystemManagement'
-
 # 'using module Bsn.Common' in the function files resolves by name through
 # PSModulePath at parse time - even when the module is already loaded - so make
 # the repo sibling discoverable before those files are dot-sourced.
@@ -51,3 +44,12 @@ $functionFiles = Get-ChildItem -Path $functionSearchPaths -Filter '*.ps1' -Recur
 foreach ($functionFile in $functionFiles) {
     . $functionFile.FullName
 }
+
+# Load the interop assembly through Bsn.Common's private loader (issue #15) -
+# full rationale in Bsn.Host.psm1: same-version reimports reuse the loaded
+# assembly, cross-version reimports get actionable guidance. The NEWEST loaded
+# Bsn.Common instance wins (the session can hold several after an update).
+# The interop types resolve at call time, so loading after the function files
+# are dot-sourced matches the RequiredAssemblies timing.
+$commonModule = Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1
+& $commonModule { param($root, $name) Import-BsnInteropAssembly -ModuleRoot $root -AssemblyName $name } $script:ModuleRoot 'Bsn.SystemManagement'
