@@ -4,6 +4,48 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.3] - 2026-11-07
+
+### Fixed
+
+- The LIVE recording view (what you watch while the recording runs) no
+  longer turns box-drawing text into CP437 mojibake on OEM-codepage
+  consoles (cmd, Windows PowerShell 5.1 hosts, fresh hidden consoles).
+  The cast file was always correct - every 0.2.2 capture test passed -
+  but the ConPTY proxy writes the stream to the real console as raw
+  UTF-8 bytes, and the console decodes those bytes with its own output
+  codepage (OEM 437), rendering `E2 94 80` as `Gamma-ohmega-acute`.
+  The engine now switches the console output codepage to UTF-8 for the
+  duration of the recording and restores the original value afterwards
+  (same restore discipline as the console input mode). Reportedly hit
+  with OpenCode after installing 0.2.2 from the gallery.
+  [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
+- `Show-InteractiveTranscript` playback no longer degrades characters
+  outside CP437 (e.g. OpenCode's heavy box-drawing border `U+2503`)
+  to literal `?` on OEM-codepage consoles: Windows PowerShell 5.1
+  hosts write `[Console]` output through the console output codepage,
+  which mangled exactly those characters while ASCII and CP437 blocks
+  survived. The playback now switches the console output encoding to
+  UTF-8 for its duration and restores it afterwards. The cast file
+  was always lossless UTF-8 - pwsh 7 playback was never affected.
+  [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
+
+### Added
+
+- A live-view system test reproducing the exact topology: conlog wraps a
+  runner whose console sits at the OEM codepage while a byte-writing
+  child records - the captured live view must render the box characters
+  themselves with zero CP437 mojibake, and the console codepage must be
+  restored after the recording.
+  [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
+- A playback system test playing a real recording back through
+  powershell.exe 5.1 inside a conlog pseudoconsole at the OEM codepage:
+  corners, borders and text must render and no CP437-unrepresentable
+  character may degrade to `?`; plus unit tests asserting the console
+  output encoding is restored after playback and that heavy box
+  characters survive a CP437-encoding console losslessly.
+  [#5](https://github.com/BSVN/Lmt.Commons/issues/5)
+
 ## [Bsn.Host 0.2.2] - 2026-11-07
 
 ### Fixed

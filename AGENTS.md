@@ -152,9 +152,16 @@ before:
     `src` directory when the Bsn.Common sibling exists) BEFORE
     dot-sourcing function files - keep that self-heal in place.
 - The Bsn.Host ConPTY engine (`src/Bsn.Host/src/PtyRecorder.cs`) must
-  restore the console input mode in `finally`, close the PTY-side pipe
+  restore the console input mode AND the console output codepage in
+  `finally` (the recording temporarily switches the real console to
+  UTF-8 so the live proxy view decodes correctly on OEM-codepage
+  consoles), close the PTY-side pipe
   handles after CreatePseudoConsole (EchoCon pattern), and emit cast files
-  as UTF-8 without BOM with LF line endings. Cast files support asciicast
+  as UTF-8 without BOM with LF line endings.
+  `Show-InteractiveTranscript` follows the same save/switch/restore
+  discipline for its playback writes (Windows PowerShell 5.1 encodes
+  `[Console]` output through the console output codepage, which turns
+  CP437-unrepresentable characters into '?'). Cast files support asciicast
   v2 (absolute event times) and v3 (intervals since the previous event,
   millisecond precision, trailing 'x' exit event) - keep both writers in
   sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and

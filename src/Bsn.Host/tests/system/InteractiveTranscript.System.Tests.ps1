@@ -415,6 +415,9 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
             if (-not $script:HasConsoleLogger) {
                 Set-ItResult -Skipped -Because 'conlog.exe is not on PATH (build from https://github.com/rhubarb-geek-nz/console-logger).'
             }
+            if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+                Set-ItResult -Skipped -Because 'conlog requires console-attached stdio (it reads its own console input); run locally in a terminal - the live-view codepage test covers conlog end to end under CI-safe hidden consoles.'
+            }
 
             $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
 
@@ -779,6 +782,223 @@ opencode
 
             $hasKnownUiText = $rawStream.Contains('New session') -or $rawStream.Contains('Ask anything') -or $rawStream.Contains('Build')
             $hasKnownUiText | Should -BeTrue -Because 'the OpenCode UI text must be captured (proves the recorded session is the TUI)'
+        }
+
+        It 'keeps the LIVE proxied view clean on an OEM-codepage console (conlog)' -Tag 'RequiresConLog' {
+            # https://github.com/BSVN/Lmt.Commons/issues/5
+            # Field regression from the v0.2.2 rollout: the CAST was clean (all
+            # capture tests pass) yet the user still watched mojibake during the
+            # recording. Cause: the engine proxies the ConPTY stream to the REAL
+            # console as raw UTF-8 bytes, and the console decodes those bytes
+            # with its own OUTPUT codepage - OEM 437 in cmd, Windows PowerShell
+            # 5.1 hosts and fresh hidden consoles. UTF-8 box borders became
+            # CP437 soup ('Gamma-ohmega-acute') in the live view while every
+            # cast-asserting test stayed green. This test reproduces that
+            # topology: conlog wraps the runner in its own pseudoconsole, the
+            # runner forces its console to the OEM codepage like the reporting
+            # user's, and the capture shows exactly what that console rendered.
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the live-view codepage test targets the Windows ConPTY engine.'
+            }
+            if (-not $script:HasConsoleLogger) {
+                Set-ItResult -Skipped -Because 'conlog.exe is not on PATH (build from https://github.com/rhubarb-geek-nz/console-logger).'
+            }
+
+            # Probe: UTF-8 box border plus ASCII markers, written as RAW BYTES
+            # to the console output handle by the recorded child - byte-writer
+            # semantics, the shape every Go/Node TUI produces.
+            $liveProbePath = Join-Path -Path $TestDrive -ChildPath 'liveview-probe.bin'
+            $thinRule = [string][char]0x2500
+            $liveProbeText = 'LIVE-HEAD' + "`r`n" +
+                ([string][char]0x256D) + ($thinRule * 20) + ([string][char]0x256E) + "`r`n" +
+                ([string][char]0x2502) + ' LIVE-MARKER ' + ([string][char]0x2502) + "`r`n" +
+                ([string][char]0x2570) + ($thinRule * 20) + ([string][char]0x256F) + "`r`n" +
+                'LIVE-TAIL'
+            [System.IO.File]::WriteAllBytes($liveProbePath, [System.Text.Encoding]::UTF8.GetBytes($liveProbeText))
+
+            $liveScenarioPath = Join-Path -Path $TestDrive -ChildPath 'liveview-child.ps1'
+            @'
+$payload = [System.IO.File]::ReadAllBytes($env:BsnLiveViewProbeFile)
+$sink = [Console]::OpenStandardOutput()
+$sink.Write($payload, 0, $payload.Length)
+$sink.Flush()
+'@ | Set-Content -LiteralPath $liveScenarioPath -Encoding UTF8
+
+            $env:BsnLiveViewProbeFile = $liveProbePath
+            try {
+                # The runner executes INSIDE the conlog pseudoconsole (so its
+                # stdio are console handles and in-process recording works -
+                # same reason the hidden-console runner exists for CI), forces
+                # its console output codepage to OEM 437 like the reporting
+                # user's, records the byte-writing child, and reports the
+                # console codepage from before and after the recording: the
+                # engine must put it back.
+                $liveRunnerPath = Join-Path -Path $TestDrive -ChildPath 'liveview-runner.ps1'
+                $liveResultPath = Join-Path -Path $TestDrive -ChildPath 'liveview-result.json'
+                $liveCastPath = Join-Path -Path $TestDrive -ChildPath 'liveview.cast'
+                @"
+param(`$RepoRoot, `$ScenarioPath, `$CastPath, `$ResultPath)
+`$ErrorActionPreference = 'Stop'
+chcp.com 437 | Out-Null
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Common/Bsn.Common.psd1') -Force
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Host/Bsn.Host.psd1') -Force
+`$codePageBefore = ([regex]::Match((chcp.com | Out-String), '(\d+)')).Groups[1].Value
+`$recording = Start-InteractiveTranscript -Command ('pwsh -NoProfile -File ' + `$ScenarioPath) -Path `$CastPath
+`$codePageAfter = ([regex]::Match((chcp.com | Out-String), '(\d+)')).Groups[1].Value
+@{ Exit = `$recording.ExitCode; CodePageBefore = `$codePageBefore; CodePageAfter = `$codePageAfter } |
+    ConvertTo-Json | Set-Content -LiteralPath `$ResultPath
+"@ | Set-Content -LiteralPath $liveRunnerPath -Encoding UTF8
+
+                $liveCapturePath = Join-Path -Path $TestDrive -ChildPath 'liveview-capture.txt'
+                $conlogCommand = Get-Command -Name 'conlog' -ErrorAction 'Stop'
+                # Start-Process (not direct invocation) so conlog owns a fresh
+                # hidden console: conlog reads its stdin as a console handle and
+                # needs stdout OR stderr attached to a console device, which CI's
+                # redirected stdio cannot provide (same trick as the
+                # hidden-console recording runner). Only stdout is redirected to
+                # the capture file - conlog's stdout IS the live view: what the
+                # runner console actually rendered. stderr stays on the hidden
+                # console (dropped).
+                $conlogProcess = Start-Process -FilePath $conlogCommand.Source `
+                    -ArgumentList @("pwsh -NoProfile -ExecutionPolicy Bypass -File $liveRunnerPath -RepoRoot $($script:RepoRoot) -ScenarioPath $liveScenarioPath -CastPath $liveCastPath -ResultPath $liveResultPath") `
+                    -WindowStyle Hidden -RedirectStandardOutput $liveCapturePath -PassThru
+                if (-not $conlogProcess.WaitForExit(120000)) {
+                    $conlogProcess.Kill()
+                    throw 'conlog live-view runner timed out after 120 seconds.'
+                }
+                if (-not (Test-Path -LiteralPath $liveResultPath)) {
+                    throw ("conlog live-view runner produced no result (exit code {0}); capture: {1}" -f $conlogProcess.ExitCode, (Get-Content -LiteralPath $liveCapturePath -Raw))
+                }
+
+                $liveOutcome = Get-Content -LiteralPath $liveResultPath -Raw | ConvertFrom-Json
+                $liveOutcome.Exit | Should -Be 0 -Because 'the recorded scenario must succeed'
+                $liveOutcome.CodePageBefore | Should -Be '437' -Because 'the runner console must sit at the OEM codepage to reproduce the reported environment'
+                $liveOutcome.CodePageAfter | Should -Be '437' -Because 'the engine must restore the original console codepage after the recording (issue #5 live view)'
+
+                $liveStream = Get-Content -LiteralPath $liveCapturePath -Raw
+                $liveStream.Contains('LIVE-MARKER') | Should -BeTrue -Because 'the proxied live view must carry the payload text'
+
+                $liveGlyphCount = { param($codePoint) ([regex]::Matches($liveStream, [regex]::Escape([string][char]$codePoint))).Count }
+                (& $liveGlyphCount 0x256D) | Should -Be 1 -Because 'the live view must render the rounded corner itself, not its CP437-decoded byte soup'
+                (& $liveGlyphCount 0x2500) | Should -Be 40 -Because 'both border rows must survive into the live view'
+
+                # CP437-decoded UTF-8 shows up as Latin-1-range letters plus Greek
+                # Gamma (0xE2 is 'Gamma' in CP437, the lead byte of every 3-byte
+                # UTF-8 sequence) - none of that may appear in the live view.
+                $liveMojibake = ([regex]::Matches($liveStream, '[\u00C0-\u00FF\u0393]')).Count
+                $liveMojibake | Should -Be 0 -Because ('the live proxied view must be free of codepage mojibake on an OEM-codepage console (found {0}); the console decodes the recorder''s raw UTF-8 bytes with its output codepage (issue #5 live view)' -f $liveMojibake)
+            }
+            finally {
+                Remove-Item 'Env:BsnLiveViewProbeFile' -ErrorAction 'SilentlyContinue'
+            }
+        }
+
+        It 'keeps PLAYBACK lossless on an OEM-codepage console in Windows PowerShell 5.1 (conlog)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/5
+            # Second half of the viewer bug: Show-InteractiveTranscript in
+            # Windows PowerShell 5.1 writes [Console] output through the
+            # console output CODEPAGE (WriteFile), so heavy box characters
+            # (U+2503, U+2579, U+256D - none exist in CP437) degraded to
+            # literal '?' in the playback while ASCII and CP437 blocks
+            # survived - exactly the reported OpenCode viewer screenshot.
+            # The playback must switch the console output encoding to UTF-8
+            # for its duration and restore it. This test plays a real
+            # recording back through powershell.exe 5.1 inside a conlog
+            # pseudoconsole forced to the OEM codepage: the capture is what
+            # that console rendered.
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the playback codepage test targets the Windows ConPTY engine.'
+            }
+            if (-not $script:HasConsoleLogger) {
+                Set-ItResult -Skipped -Because 'conlog.exe is not on PATH (build from https://github.com/rhubarb-geek-nz/console-logger).'
+            }
+
+            # Record a cast that contains corner characters (not in CP437):
+            # the byte-writing probe child makes the recording deterministic.
+            $probePath = Join-Path -Path $TestDrive -ChildPath 'playback-probe.bin'
+            $rule = [string][char]0x2500
+            $probeText = 'PB-HEAD' + "`r`n" +
+                ([string][char]0x256D) + ($rule * 18) + ([string][char]0x256E) + "`r`n" +
+                ([string][char]0x2502) + ' PB-MARKER ' + ([string][char]0x2502) + "`r`n" +
+                ([string][char]0x2570) + ($rule * 18) + ([string][char]0x256F) + "`r`n" +
+                'PB-TAIL'
+            [System.IO.File]::WriteAllBytes($probePath, [System.Text.Encoding]::UTF8.GetBytes($probeText))
+
+            $childPath = Join-Path -Path $TestDrive -ChildPath 'playback-child.ps1'
+            @'
+$payload = [System.IO.File]::ReadAllBytes($env:BsnPlaybackProbeFile)
+$sink = [Console]::OpenStandardOutput()
+$sink.Write($payload, 0, $payload.Length)
+$sink.Flush()
+'@ | Set-Content -LiteralPath $childPath -Encoding UTF8
+
+            $env:BsnPlaybackProbeFile = $probePath
+            try {
+                $castPath = Join-Path -Path $TestDrive -ChildPath 'playback.cast'
+                $null = Invoke-BsnSystemRecording -ScenarioPath $childPath -CastPath $castPath
+
+                # Play the cast back through powershell.exe 5.1 inside a conlog
+                # pseudoconsole whose console sits at the OEM codepage: conlog's
+                # capture is the rendered playback, exactly what the reporting
+                # user's viewer showed.
+                $playRunnerPath = Join-Path -Path $TestDrive -ChildPath 'playback-runner51.ps1'
+                $playResultPath = Join-Path -Path $TestDrive -ChildPath 'playback-result.json'
+                @"
+param(`$RepoRoot, `$CastPath, `$ResultPath)
+`$ErrorActionPreference = 'Stop'
+chcp.com 437 | Out-Null
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Common/Bsn.Common.psd1') -Force
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Host/Bsn.Host.psd1') -Force
+`$codePageBefore = ([regex]::Match((chcp.com | Out-String), '(\d+)')).Groups[1].Value
+Show-InteractiveTranscript -Path `$CastPath
+`$codePageAfter = ([regex]::Match((chcp.com | Out-String), '(\d+)')).Groups[1].Value
+@{ Before = `$codePageBefore; After = `$codePageAfter } | ConvertTo-Json | Set-Content -LiteralPath `$ResultPath
+"@ | Set-Content -LiteralPath $playRunnerPath -Encoding UTF8
+
+                $playCapturePath = Join-Path -Path $TestDrive -ChildPath 'playback-capture.txt'
+                $conlogCommand = Get-Command -Name 'conlog' -ErrorAction 'Stop'
+                $conlogProcess = Start-Process -FilePath $conlogCommand.Source `
+                    -ArgumentList @("powershell.exe -NoProfile -ExecutionPolicy Bypass -File $playRunnerPath -RepoRoot $($script:RepoRoot) -CastPath $castPath -ResultPath $playResultPath") `
+                    -WindowStyle Hidden -RedirectStandardOutput $playCapturePath -PassThru
+                if (-not $conlogProcess.WaitForExit(120000)) {
+                    $conlogProcess.Kill()
+                    throw 'conlog playback runner timed out after 120 seconds.'
+                }
+                if (-not (Test-Path -LiteralPath $playResultPath)) {
+                    throw ("conlog playback runner produced no result (exit code {0}); capture: {1}" -f $conlogProcess.ExitCode, (Get-Content -LiteralPath $playCapturePath -Raw))
+                }
+
+                $playOutcome = Get-Content -LiteralPath $playResultPath -Raw | ConvertFrom-Json
+                $playOutcome.Before | Should -Be '437' -Because 'the playback console must sit at the OEM codepage to reproduce the reported viewer'
+                $playOutcome.After | Should -Be '437' -Because 'the playback must restore the console output encoding it found (issue #5 viewer bug)'
+
+                $playStream = Get-Content -LiteralPath $playCapturePath -Raw
+                $playStream.Contains('PB-MARKER') | Should -BeTrue -Because 'the playback must carry the payload text'
+
+                $playGlyphCount = { param($codePoint) ([regex]::Matches($playStream, [regex]::Escape([string][char]$codePoint))).Count }
+                (& $playGlyphCount 0x256D) | Should -Be 1 -Because 'the corner must render in the playback, not degrade to a question mark (issue #5 viewer bug)'
+                (& $playGlyphCount 0x2500) | Should -Be 36 -Because 'both border rows must survive playback'
+
+                # Count RENDERED question marks: strip VT sequences first (the
+                # passthrough stream legitimately contains '?' inside CSI
+                # private-mode sequences like ESC[?25l - those are interpreted,
+                # never rendered).
+                $plainPlayback = Convert-BsnCastPlainText -RawStream $playStream
+                $playQuestionMarks = ([regex]::Matches($plainPlayback, '\?')).Count
+                $playQuestionMarks | Should -Be 0 -Because ('CP437-unrepresentable characters must not degrade to literal question marks during playback (found {0}; issue #5 viewer bug)' -f $playQuestionMarks)
+            }
+            finally {
+                Remove-Item 'Env:BsnPlaybackProbeFile' -ErrorAction 'SilentlyContinue'
+            }
         }
     }
 

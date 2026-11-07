@@ -78,6 +78,15 @@ events. `-RecordInput` records keystrokes as `i` events (off by default -
 it can capture secrets; the fact is noted in the cast header; Windows only
 this release).
 
+On Windows the recorded session runs under a UTF-8 console codepage (the
+programmatic `chcp 65001` via `[Console]::OutputEncoding`/`InputEncoding`),
+and the engine temporarily switches the calling console's output codepage
+to UTF-8 for the duration of the recording, restoring it afterwards. This
+keeps the live view of byte-writing TUIs (OpenCode and other Go/Node
+applications) free of CP437 mojibake even on OEM-codepage consoles such as
+cmd or the Windows PowerShell 5.1 host - the cast file itself is UTF-8
+encoded regardless.
+
 ## Why not record the outer session like Start-Transcript?
 
 PowerShell exposes **no public hook, event or handler** for intercepting the
