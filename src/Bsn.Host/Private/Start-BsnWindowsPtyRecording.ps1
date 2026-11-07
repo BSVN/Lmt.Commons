@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Thin wrapper around the compiled Bsn.Host engine (src/Bsn.Host.csproj,
-    loaded via the module manifest's RequiredAssemblies):
+    loaded through the shared Bsn.Common loader instead of RequiredAssemblies):
     - creates a pseudo-console and starts the command attached to it,
     - proxies raw console input into the pseudo-console,
     - tees the VT output stream to the real console and, with timestamps,

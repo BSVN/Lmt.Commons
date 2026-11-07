@@ -88,9 +88,17 @@ before:
 
 - C# interop code lives in real .NET projects, one per module
   (`src/<Module>/<Module>.csproj`, netstandard2.0, output to
-  `src/<Module>/lib/`), loaded via `RequiredAssemblies` in the manifest.
+  `src/<Module>/lib/`). The module loaders load the DLL through the shared
+  private `Import-BsnInteropAssembly` helper in Bsn.Common (invoked from each
+  psm1) - deliberately NOT via `RequiredAssemblies`: same-version reimports
+  (`Import-Module -Force`) reuse the loaded assembly, and cross-version
+  reimports fail with actionable guidance, because PowerShell cannot host two
+  versions of the same assembly in one process (issue #15).
   `build.ps1` compiles every csproj with `dotnet build` before any task
-  runs; `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
+  runs, stamping the assembly version from the module manifest
+  (`-p:Version=<ModuleVersion>`; guard tests assert the equality - all
+  shipped versions must carry distinct assembly versions);
+  `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
   here-strings inside .ps1 files.
 - Shared helpers are factored into `src/Bsn.Common` (required by the other
   modules via RequiredModules, the Az/VMware-style dependency chain):
@@ -184,11 +192,13 @@ before:
   actions to full commit SHAs - codecov-action; Dependabot keeps SHA
   pins updated).
 - SonarCloud Gate (`.github/workflows/SonarGate.yml`): on every PR to
-  main, polls the SonarCloud quality-gate API for the PR's new code
-  (public read API, no token) and fails the check if the gate fails or
-  no analysis appears within 10 minutes. Make it (plus the CI matrix
-  and CodeQL checks) a required status check via branch protection to
-  enforce it before merges.
+  main, first waits for SonarCloud's own `SonarCloud Code Analysis` check
+  run of the PR head commit (the workflow starts while Automatic Analysis
+  is still running, and the quality-gate API would serve the previous
+  push's stale result), then fails the check unless the quality-gate API
+  returns OK (public SonarCloud read API, no SonarCloud token). Make it
+  (plus the CI matrix and CodeQL checks) a required status check via
+  branch protection to enforce it before merges.
 - System tests (`src/Bsn.Host/tests/system/`): full end-to-end tests
   that exercise the real recording engines (no mocks). Windows uses a
   hidden-console runner process (CI has redirected stdio which breaks

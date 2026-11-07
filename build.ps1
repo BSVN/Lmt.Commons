@@ -108,7 +108,22 @@ function Invoke-ModuleCompile {
 
     foreach ($project in $projects) {
         Write-Host ("==> Compiling {0}" -f $project.BaseName)
-        & $dotnetCommand.Source build $project.FullName --configuration 'Release' --nologo --verbosity 'quiet'
+        # Stamp the interop assembly with the owning module's manifest version
+        # (the psd1 stays the single source of truth). Shipping every module
+        # version with the default AssemblyVersion 1.0.0.0 gives all module
+        # versions an identical assembly identity, so Import-Module -Force
+        # after Update-Module fails with FileLoadException (.NET refuses a
+        # second assembly with the same identity in one process).
+        # https://github.com/BSVN/Lmt.Commons/issues/15
+        $manifestPath = Join-Path -Path $project.DirectoryName -ChildPath ($project.BaseName + '.psd1')
+        $buildArguments = @('build', $project.FullName, '--configuration', 'Release', '--nologo', '--verbosity', 'quiet')
+        if (Test-Path -LiteralPath $manifestPath) {
+            $moduleVersion = (Import-PowerShellDataFile -LiteralPath $manifestPath).ModuleVersion
+            if ($moduleVersion) {
+                $buildArguments += ('-p:Version=' + $moduleVersion)
+            }
+        }
+        & $dotnetCommand.Source @buildArguments
         if ($LASTEXITCODE -ne 0) {
             throw ("dotnet build failed for '{0}'." -f $project.FullName)
         }
@@ -180,7 +195,22 @@ $taskMap = @{
         Import-Module -Name PSScriptAnalyzer -ErrorAction 'Stop'
         foreach ($module in (Get-BuildModule)) {
             Write-Host ("==> Analyzing {0}" -f $module.Name)
-            $findings = @(Invoke-ScriptAnalyzer -Path $module.Path -Recurse -Severity 'Error', 'Warning' -ErrorAction 'Stop')
+            # PSScriptAnalyzer imports the module it analyzes (that is how the
+            # test-harness FileLoadException workaround below historically
+            # appeared). Without the repo src prepended, module names resolve
+            # to the newest GALLERY copy, so the analysis silently runs against
+            # published code and leaves that foreign assembly loaded in this
+            # process - which then breaks the repo tests' interop assembly
+            # loading (issue #15). Analyze the repo's own modules instead.
+            $sourceDirectory = Join-Path -Path $repoRoot -ChildPath 'src'
+            $previousModulePath = $env:PSModulePath
+            $env:PSModulePath = '{0}{1}{2}' -f $sourceDirectory, [System.IO.Path]::PathSeparator, $env:PSModulePath
+            try {
+                $findings = @(Invoke-ScriptAnalyzer -Path $module.Path -Recurse -Severity 'Error', 'Warning' -ErrorAction 'Stop')
+            }
+            finally {
+                $env:PSModulePath = $previousModulePath
+            }
             if ($findings.Count -gt 0) {
                 $findings | Format-Table -AutoSize | Out-String -Width 200 | Write-Host -ForegroundColor Yellow
                 throw ('{0} failed PSScriptAnalyzer with {1} finding(s).' -f $module.Name, $findings.Count)

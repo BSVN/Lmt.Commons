@@ -17,27 +17,59 @@ jobs:
     env:
       PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'BSVN_Lmt.Commons' }}
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
     steps:
-      - name: Wait for the analysis, then check the quality gate
+      - name: Resolve the PR head commit (manual dispatch)
+        if: env.PR_HEAD_SHA == ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = 'Bearer ' + $env:GITHUB_TOKEN; Accept = 'application/vnd.github+json' }
+          $pull = Invoke-RestMethod -Uri "$($env:GITHUB_API_URL)/repos/$($env:GITHUB_REPOSITORY)/pulls/$($env:PR_NUMBER)" -Headers $headers
+          "PR_HEAD_SHA=$($pull.head.sha)" | Add-Content -Path $env:GITHUB_ENV
+          Write-Host "PR head commit: $($pull.head.sha)"
 
-          # Poll until SonarCloud publishes the quality-gate result for this PR
-          # (Automatic Analysis typically completes within a couple of minutes;
-          # allow up to ~10 minutes for busy moments).
-          $status = $null
-          for ($i = 0; $i -lt 60; $i++) {
-            $uri = 'https://sonarcloud.io/api/qualitygates/project_status?projectKey={0}&pullRequest={1}' -f $env:PROJECT_KEY, $env:PR_NUMBER
-            $response = Invoke-RestMethod -Uri $uri
-            if ($response.projectStatus.status -and $response.projectStatus.status -ne 'NONE') {
-              $status = $response.projectStatus.status
+      - name: Wait for the analysis of this head commit, then check the quality gate
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # The pull_request workflow starts right after the push, while
+          # SonarCloud Automatic Analysis is still running - and the
+          # quality-gate API meanwhile serves the PREVIOUS push's result.
+          # Reporting that stale result against the new commit is a false
+          # signal, so first wait for SonarCloud's own 'SonarCloud Code
+          # Analysis' check run of THIS head commit to complete (it appears
+          # exactly when the analysis finished), and only then read the gate
+          # status, which now reflects this commit's analysis.
+          $headers = @{ Authorization = 'Bearer ' + $env:GITHUB_TOKEN; Accept = 'application/vnd.github+json' }
+          $deadline = (Get-Date).AddMinutes(10)
+          $sonarCheck = $null
+          $attempt = 0
+          while ((Get-Date) -lt $deadline) {
+            $attempt++
+            $checks = Invoke-RestMethod -Uri "$($env:GITHUB_API_URL)/repos/$($env:GITHUB_REPOSITORY)/commits/$($env:PR_HEAD_SHA)/check-runs?per_page=100" -Headers $headers
+            $sonarCheck = @($checks.check_runs | Where-Object -FilterScript { $_.name -eq 'SonarCloud Code Analysis' })
+            if ($sonarCheck.Count -gt 0 -and -not ($sonarCheck | Where-Object -FilterScript { $_.status -ne 'completed' })) {
               break
             }
-            Write-Host "Waiting for SonarCloud analysis of PR #$($env:PR_NUMBER) (attempt $($i + 1)/60)..."
-            Start-Sleep -Seconds 10
+            Write-Host "Waiting for SonarCloud to analyze commit $($env:PR_HEAD_SHA) (attempt $attempt/40)..."
+            Start-Sleep -Seconds 15
           }
 
+          if (-not $sonarCheck -or $sonarCheck.Count -eq 0) {
+            throw "No SonarCloud Code Analysis check run appeared for commit $($env:PR_HEAD_SHA) within 10 minutes. Verify that SonarCloud Automatic Analysis is enabled and the branch is pushed (https://sonarcloud.io)."
+          }
+
+          # The analysis of this commit is complete: the gate API now
+          # reflects it.
+          $gateUri = 'https://sonarcloud.io/api/qualitygates/project_status?projectKey={0}&pullRequest={1}' -f $env:PROJECT_KEY, $env:PR_NUMBER
+          $response = Invoke-RestMethod -Uri $gateUri
+          $status = $response.projectStatus.status
           $reportUri = 'https://sonarcloud.io/summary/new_code?id={0}&pullRequest={1}' -f $env:PROJECT_KEY, $env:PR_NUMBER
           switch ($status) {
               'OK' {
@@ -49,7 +81,7 @@ jobs:
                   exit 1
               }
               default {
-                  Write-Host "::error::No SonarCloud analysis appeared for PR #$($env:PR_NUMBER) within 10 minutes (last status: '$status'). Verify the project at https://sonarcloud.io (Automatic Analysis must be enabled and the branch pushed)."
+                  Write-Host "::error::SonarCloud reported quality-gate status '$status' for PR #$($env:PR_NUMBER) (expected OK or ERROR). Verify the project at https://sonarcloud.io."
                   exit 1
               }
           }

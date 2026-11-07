@@ -44,3 +44,17 @@ $functionFiles = Get-ChildItem -Path $functionSearchPaths -Filter '*.ps1' -Recur
 foreach ($functionFile in $functionFiles) {
     . $functionFile.FullName
 }
+
+
+# Delegate the interop assembly load to Bsn.Common's private helper (issue
+# #15): reimporting the SAME release reuses what the session already hosts,
+# while importing a NEWER release after Update-Module stops with explicit
+# guidance, because one process cannot host one assembly under two versions.
+# The helper is invoked through the newest loaded Bsn.Common instance (old and
+# new copies coexist after an update; a bare array would stringify into a
+# bogus command). Interop types bind at call time, so the late placement is
+# equivalent to the manifest's RequiredAssemblies timing.
+$systemInteropHost = Get-Module -Name 'Bsn.Common' |
+    Sort-Object -Property Version -Descending |
+    Select-Object -First 1
+& $systemInteropHost { param($moduleDirectory, $assemblySimpleName) Import-BsnInteropAssembly -ModuleRoot $moduleDirectory -AssemblyName $assemblySimpleName } $script:ModuleRoot 'Bsn.SystemManagement'
