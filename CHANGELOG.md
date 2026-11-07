@@ -4,6 +4,30 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.4] - 2026-11-08
+
+### Fixed
+
+- **Every recording on Ubuntu 26.04 (util-linux 2.41) came back empty**:
+  the script(1) engine combined `--log-out <file>` with a trailing
+  positional typescript file (`/dev/null`), which util-linux 2.41
+  rejects with "unexpected number of arguments" - the recording process
+  exited immediately and produced a 0-event cast. The invocation now
+  uses the options-only form (`--log-timing`/`--log-out` without a
+  positional), which works on current and older util-linux releases.
+  Found while verifying WSL2/Ubuntu 26.04 end to end: `echo`-level
+  recordings now capture markers, kernel release and zero U+FFFD.
+
+### Added
+
+- A CI-runnable Linux/macOS system test for `-Command` recordings via
+  the script(1) engine (the engine had zero end-to-end CI coverage:
+  every other Unix system test skips under CI redirected stdio). It
+  asserts markers, kernel name and zero U+FFFD in the cast, and pins
+  the util-linux 2.41 invocation regression.
+- Show-InteractiveTranscript follows the same restore discipline for
+  playback writes (from 0.2.3) - unchanged here.
+
 ## [Bsn.Host 0.2.3] - 2026-11-07
 
 ### Fixed

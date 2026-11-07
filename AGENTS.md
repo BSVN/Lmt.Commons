@@ -167,6 +167,11 @@ before:
   sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and
   `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
   logic - extend tests there rather than smoke-testing the native engine.
+  Unix script(1) invocation: do NOT pass a trailing positional typescript
+  file alongside `--log-out` - util-linux 2.41 (Ubuntu 26.04) rejects the
+  combination ('unexpected number of arguments') and recordings come back
+  empty; the options-only form works on current and older util-linux.
+  The `-Command` Unix system test keeps this pinned in CI.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
   self-contained (it is shipped alone to remote machines via
   `Invoke-Command -FilePath`, which cannot carry the module's DLL): its
