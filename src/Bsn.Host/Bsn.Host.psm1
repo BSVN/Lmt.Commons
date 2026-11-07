@@ -51,6 +51,7 @@ foreach ($functionFile in $functionFiles) {
     . $functionFile.FullName
 }
 
+
 # Load the interop assembly through Bsn.Common's private loader instead of the
 # manifest's RequiredAssemblies (issue #15): a same-version reimport
 # (Import-Module -Force) reuses the loaded assembly, and a cross-version

@@ -45,11 +45,16 @@ foreach ($functionFile in $functionFiles) {
     . $functionFile.FullName
 }
 
-# Load the interop assembly through Bsn.Common's private loader (issue #15) -
-# full rationale in Bsn.Host.psm1: same-version reimports reuse the loaded
-# assembly, cross-version reimports get actionable guidance. The NEWEST loaded
-# Bsn.Common instance wins (the session can hold several after an update).
-# The interop types resolve at call time, so loading after the function files
-# are dot-sourced matches the RequiredAssemblies timing.
-$commonModule = Get-Module -Name 'Bsn.Common' | Sort-Object -Property Version -Descending | Select-Object -First 1
-& $commonModule { param($root, $name) Import-BsnInteropAssembly -ModuleRoot $root -AssemblyName $name } $script:ModuleRoot 'Bsn.SystemManagement'
+
+# Delegate the interop assembly load to Bsn.Common's private helper (issue
+# #15): reimporting the SAME release reuses what the session already hosts,
+# while importing a NEWER release after Update-Module stops with explicit
+# guidance, because one process cannot host one assembly under two versions.
+# The helper is invoked through the newest loaded Bsn.Common instance (old and
+# new copies coexist after an update; a bare array would stringify into a
+# bogus command). Interop types bind at call time, so the late placement is
+# equivalent to the manifest's RequiredAssemblies timing.
+$systemInteropHost = Get-Module -Name 'Bsn.Common' |
+    Sort-Object -Property Version -Descending |
+    Select-Object -First 1
+& $systemInteropHost { param($moduleDirectory, $assemblySimpleName) Import-BsnInteropAssembly -ModuleRoot $moduleDirectory -AssemblyName $assemblySimpleName } $script:ModuleRoot 'Bsn.SystemManagement'

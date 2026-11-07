@@ -192,11 +192,13 @@ before:
   actions to full commit SHAs - codecov-action; Dependabot keeps SHA
   pins updated).
 - SonarCloud Gate (`.github/workflows/SonarGate.yml`): on every PR to
-  main, polls the SonarCloud quality-gate API for the PR's new code
-  (public read API, no token) and fails the check if the gate fails or
-  no analysis appears within 10 minutes. Make it (plus the CI matrix
-  and CodeQL checks) a required status check via branch protection to
-  enforce it before merges.
+  main, first waits for SonarCloud's own `SonarCloud Code Analysis` check
+  run of the PR head commit (the workflow starts while Automatic Analysis
+  is still running, and the quality-gate API would serve the previous
+  push's stale result), then fails the check unless the quality-gate API
+  returns OK (public SonarCloud read API, no SonarCloud token). Make it
+  (plus the CI matrix and CodeQL checks) a required status check via
+  branch protection to enforce it before merges.
 - System tests (`src/Bsn.Host/tests/system/`): full end-to-end tests
   that exercise the real recording engines (no mocks). Windows uses a
   hidden-console runner process (CI has redirected stdio which breaks
