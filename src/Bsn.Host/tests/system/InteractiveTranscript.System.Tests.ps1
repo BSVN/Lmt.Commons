@@ -1084,6 +1084,39 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
         }
     }
 
+    Context 'Unix script(1) engine: -Command recording (util-linux 2.41 regression)' {
+        It 'records a -Command session and captures the markers on Linux/macOS' -Tag 'SystemTest' {
+            # Regression for Ubuntu 26.04 / util-linux 2.41: util-linux rejects
+            # combining --log-out with a trailing positional typescript file
+            # ('unexpected number of arguments'), which made every -Command
+            # recording come back empty (0 events). The invocation must use the
+            # options-only form. Runs under CI redirected stdio on purpose:
+            # script(1) allocates its own PTY, and -Command children like
+            # 'echo' do not need stdin, so this is deterministic in CI.
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if ($script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'Windows uses the ConPTY engine; this regression targets the Unix script(1) engine.'
+            }
+
+            $marker = 'UNIXMARKER-{0}' -f (Get-Random)
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'unix-command.cast'
+            $result = Start-InteractiveTranscript -Command ("echo $marker; uname -s") -Path $castPath
+
+            $result.ExitCode | Should -Be 0 -Because 'the recorded echo command must succeed'
+            $stream = Get-BsnCastRawStream -CastPath $castPath
+            $stream.Length | Should -BeGreaterThan 0 -Because 'the recording must not be empty (util-linux 2.41 invocation regression)'
+            $stream.Contains($marker) | Should -BeTrue -Because 'the recorded marker must be captured'
+            $stream.Contains('Linux') -or $stream.Contains('Darwin') | Should -BeTrue -Because 'the uname -s output must be captured'
+            $replacementCount = ([regex]::Matches($stream, [regex]::Escape([string][char]0xFFFD))).Count
+            $replacementCount | Should -Be 0 -Because 'the recording must contain zero U+FFFD replacement characters'
+        }
+    }
+
     Context 'Stop-InteractiveTranscript finalizes a running session' {
         It 'stops early via the stop channel and captures everything before the stop' {
             if (-not $script:CanRunSystemTests) {

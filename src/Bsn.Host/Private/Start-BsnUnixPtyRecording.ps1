@@ -83,7 +83,10 @@ function Start-BsnUnixPtyRecording {
             $outputPath = [System.IO.Path]::GetTempFileName()
             $temporaryPaths = @($timingPath, $outputPath)
 
-            $processInfo.Arguments = ('-q -f -e -c "{0}" --log-timing "{1}" --log-out "{2}" /dev/null' -f $recordedCommand, $timingPath, $outputPath)
+            # The invocation shape depends on the installed script(1): probe it
+            # (util-linux 2.39+/2.41 reject the positional typescript file that
+            # older releases accept - see Resolve-BsnScriptInvocation).
+            $processInfo.Arguments = Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath
         }
         else {
             $rawPath = [System.IO.Path]::GetTempFileName()

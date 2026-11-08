@@ -4,6 +4,41 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.4] - 2026-11-08
+
+### Fixed
+
+- **Every recording on Ubuntu 24.04 and 26.04 (util-linux 2.39 / 2.41)
+  came back empty**: the script(1) engine combined `--log-out <file>`
+  with a trailing positional typescript file (`/dev/null`), which
+  util-linux 2.39 rejects with "unexpected number of arguments" - the
+  recording process exited immediately and produced a 0-event cast.
+  (Ubuntu 22.04 / util-linux 2.37 accepts both shapes; Ubuntu 20.04 /
+  2.34 has no `--log-timing` at all and uses the approximated-timing
+  branch, so it was never affected.) The engine now **probes the
+  installed script(1) binary** once with a no-op child and picks the
+  invocation shape it accepts - the historically tested positional form
+  where supported, the options-only form where not - so no util-linux
+  version string parsing is involved and future releases are handled by
+  the same probe. Found while verifying WSL2/Ubuntu 26.04 end to end:
+  `echo`-level recordings now capture markers, kernel release and zero
+  U+FFFD.
+
+### Added
+
+- A CI-runnable Linux/macOS system test for `-Command` recordings via
+  the script(1) engine (the engine had zero end-to-end CI coverage:
+  every other Unix system test skips under CI redirected stdio). It
+  asserts markers, kernel name and zero U+FFFD in the cast, and pins
+  the invocation-compatibility regression.
+- Unit tests for the invocation probe with fake script(1) binaries
+  (accepting/rejecting), covering both invocation shapes.
+- CI matrix: adds a pinned `ubuntu-24.04` image alongside
+  `ubuntu-latest` (26.04) so two util-linux generations exercise the
+  script(1) engine on every pull request.
+- Show-InteractiveTranscript follows the same restore discipline for
+  playback writes (from 0.2.3) - unchanged here.
+
 ## [Bsn.Host 0.2.3] - 2026-11-07
 
 ### Fixed
