@@ -4,7 +4,7 @@
 
 We pledge to make our community welcoming, safe, and equitable for all.
 
-We are committed to fostering an environment that respects and promotes the dignity, rights, and contributions of all individuals, regardless of characteristics including race, ethnicity, caste, color, age, physical characteristics, neurodiversity, disability, sex or gender, gender identity or expression, sexual orientation, language, philosophy or religion, national or social origin, socio-economic position, level of education, or other status. The same privileges of participation are extended to everyone who participates in good faith and in accordance with this Covenant.
+We are committed to fostering an environment that respects and promotes the dignity, rights, and contributions of all individuals, regardless of characteristics including race, ethnicity, color, age, physical characteristics, neurodiversity, disability, language, national or social origin, socio-economic position, level of education. The same privileges of participation are extended to everyone who participates in good faith and in accordance with this Covenant.
 
 ## Encouraged Behaviors
 
@@ -106,7 +106,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Attribution
 
-This Code of Conduct is adapted from the Contributor Covenant, version 3.0, permanently available at [https://www.contributor-covenant.org/version/3/0/](https://www.contributor-covenant.org/version/3/0/).
+This Code of Conduct is adapted from the Contributor Covenant, version 3.0, permanently available at [https://www.contributor-covenant.org/version/3/0/](https://www.contributor-covenant.org/version/3/0/) with minor changes.
 
 Contributor Covenant is stewarded by the Organization for Ethical Source and licensed under CC BY-SA 4.0. To view a copy of this license, visit [https://creativecommons.org/licenses/by-sa/4.0/](https://creativecommons.org/licenses/by-sa/4.0/)
 
