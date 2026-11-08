@@ -276,3 +276,17 @@ before:
 - Branch naming: `feature/<topic>`, `fix/<topic>`, or `chore/<topic>`.
 - Commit locally on the feature branch by default; push the branch and
   open the PR when the work is ready for review.
+- **Follow the community process files on every issue and PR.**
+  - Issue creation: always use the issue templates under
+    `.github/ISSUE_TEMPLATE/` (bug report / feature request forms);
+    blank issues are disabled on purpose. Security vulnerabilities are
+    never reported as issues - follow `SECURITY.md` (private
+    vulnerability reporting).
+  - PR submitting: fill in every section and checklist item of
+    `.github/PULL_REQUEST_TEMPLATE.md` and follow `CONTRIBUTING.md`
+    (prerequisites, ground rules, PR flow). Behavior in all community
+    spaces follows `CODE_OF_CONDUCT.md`.
+  - Keeping those files consistent is part of repo hygiene: when a new
+    contributor-facing rule is added to AGENTS.md, mirror it in
+    `CONTRIBUTING.md` and/or the templates so humans and agents read the
+    same requirements.
