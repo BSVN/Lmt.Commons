@@ -19,6 +19,41 @@ namespace Bsn.Host.Interop
     }
 
     /// <summary>
+    /// Console INPUT buffer diagnostics and maintenance (issue #20): the
+    /// terminal answers query sequences (DSR, DA, XTWINOPS pixel-size,
+    /// kitty keyboard, OSC color queries) by writing response records into
+    /// the console input buffer. Playback that re-emits queries therefore
+    /// pollutes the prompt with typed-looking response text; the module
+    /// scrubs queries from playback and flushes the input buffer afterwards.
+    /// Public because PowerShell script (outside this assembly) drives it.
+    /// </summary>
+    public static class ConsoleInputInterop
+    {
+        private const int STD_INPUT_HANDLE = -10;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetNumberOfConsoleInputEvents(IntPtr hConsoleInput, out uint lpcNumberOfEvents);
+
+        /// <summary>
+        /// Number of pending records in the standard input buffer of the
+        /// current console.
+        /// </summary>
+        public static int GetInputRecordCount()
+        {
+            uint count;
+            if (!GetNumberOfConsoleInputEvents(GetStdHandle(STD_INPUT_HANDLE), out count))
+            {
+                throw new InvalidOperationException("GetNumberOfConsoleInputEvents failed with Win32 error " + Marshal.GetLastWin32Error());
+            }
+
+            return (int)count;
+        }
+    }
+
+    /// <summary>
     /// Records a command line inside a Windows pseudo-console (ConPTY), teeing
     /// the VT stream with timestamps into an asciicast v2 file. Modelled on the
     /// EchoCon sample from the microsoft/terminal repository.
@@ -416,6 +451,239 @@ namespace Bsn.Host.Interop
     }
 
     /// <summary>
+    /// Streaming filter that removes response-eliciting terminal QUERY
+    /// sequences from a recorded VT output stream (issue #20).
+    ///
+    /// Recorded TUI applications query the terminal they are attached to:
+    /// XTWINOPS pixel-size requests (ESC[14t), DSR cursor-position requests
+    /// (ESC[6n), device attributes (ESC[c, ESC[>c), XTVERSION (ESC[>0q),
+    /// kitty keyboard protocol queries (ESC[?u), DECRQM mode requests and
+    /// OSC default-color queries (ESC]10;?BEL, ESC]11;?BEL, ESC]4;n;?).
+    /// Those queries are only meaningful while the ORIGINAL application is
+    /// connected to the terminal - in a cast file they are dead payload that
+    /// makes any player re-broadcast them, which causes the real terminal to
+    /// write its answers into the console input buffer where they surface as
+    /// typed text at the prompt (issue #20: '[4;600;1200t' after playback).
+    ///
+    /// The filter is applied by the recorder at CAPTURE time (CastWriter), so
+    /// casts never contain the queries; the live proxy view is NOT affected.
+    /// Parser state persists across Filter calls, handling sequences that span
+    /// chunk boundaries. Set forms, answers and ordinary content are preserved:
+    /// SGR, cursor movement, alternate screen, OSC titles, XTWINOPS SET forms
+    /// (e.g. 'CSI 4;height;width t'), kitty push/pop and DECSCUSR.
+    /// </summary>
+    public sealed class TerminalQueryFilter
+    {
+        private enum ParseMode { Ground, Escape, Csi, Osc }
+        private ParseMode mode = ParseMode.Ground;
+        private readonly StringBuilder sequence = new StringBuilder(64);
+        private bool escapeSeenInsideOsc;
+
+        /// <summary>
+        /// Filters one chunk of decoded VT text and returns the part that can
+        /// be emitted. A trailing partial sequence is held back until the
+        /// next call completes it.
+        /// </summary>
+        public string Filter(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var output = new StringBuilder(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                ProcessChar(text[i], output);
+            }
+
+            return output.ToString();
+        }
+
+        /// <summary>
+        /// Emits any held partial sequence verbatim (end of stream): a
+        /// truncated trailing sequence is real recorded content and must not
+        /// vanish.
+        /// </summary>
+        public string FlushRemaining()
+        {
+            string held = sequence.ToString();
+            sequence.Clear();
+            mode = ParseMode.Ground;
+            escapeSeenInsideOsc = false;
+            return held;
+        }
+
+        private void ProcessChar(char ch, StringBuilder output)
+        {
+            switch (mode)
+            {
+                case ParseMode.Ground:
+                    if (ch == '\x1B')
+                    {
+                        sequence.Clear();
+                        sequence.Append(ch);
+                        mode = ParseMode.Escape;
+                    }
+                    else
+                    {
+                        output.Append(ch);
+                    }
+
+                    return;
+
+                case ParseMode.Escape:
+                    sequence.Append(ch);
+                    if (ch == '[')
+                    {
+                        mode = ParseMode.Csi;
+                    }
+                    else if (ch == ']')
+                    {
+                        mode = ParseMode.Osc;
+                        escapeSeenInsideOsc = false;
+                    }
+                    else
+                    {
+                        // Other escape introducers (charset selection, ESC 7,
+                        // ESC D ...) are not queries - emit verbatim.
+                        output.Append(sequence.ToString());
+                        sequence.Clear();
+                        mode = ParseMode.Ground;
+                    }
+
+                    return;
+
+                case ParseMode.Csi:
+                    if (ch == '\x1B')
+                    {
+                        // A new sequence starts before this one ended: emit
+                        // the malformed one as-is and restart.
+                        output.Append(sequence.ToString());
+                        sequence.Clear();
+                        sequence.Append(ch);
+                        mode = ParseMode.Escape;
+                        return;
+                    }
+
+                    if (ch >= 0x40 && ch <= 0x7E)
+                    {
+                        // Final byte: keep or drop the whole sequence.
+                        sequence.Append(ch);
+                        if (!IsDroppedCsi(sequence.ToString()))
+                        {
+                            output.Append(sequence.ToString());
+                        }
+
+                        sequence.Clear();
+                        mode = ParseMode.Ground;
+                        return;
+                    }
+
+                    if (ch < 0x20)
+                    {
+                        // Control character inside a CSI: emit the sequence
+                        // as-is and re-process the character in Ground mode.
+                        output.Append(sequence.ToString());
+                        sequence.Clear();
+                        mode = ParseMode.Ground;
+                        ProcessChar(ch, output);
+                        return;
+                    }
+
+                    sequence.Append(ch);
+                    if (sequence.Length > 128)
+                    {
+                        // Malformed oversized sequence: emit as-is.
+                        output.Append(sequence.ToString());
+                        sequence.Clear();
+                        mode = ParseMode.Ground;
+                    }
+
+                    return;
+
+                case ParseMode.Osc:
+                    if (escapeSeenInsideOsc)
+                    {
+                        if (ch == '\\')
+                        {
+                            // ST (ESC \) terminator.
+                            FinishOsc(output, "\x1B\\");
+                            return;
+                        }
+
+                        sequence.Append('\x1B');
+                        escapeSeenInsideOsc = false;
+                    }
+
+                    if (ch == '\x07')
+                    {
+                        // BEL terminator.
+                        FinishOsc(output, "\x07");
+                        return;
+                    }
+
+                    if (ch == '\x1B')
+                    {
+                        escapeSeenInsideOsc = true;
+                        return;
+                    }
+
+                    sequence.Append(ch);
+                    if (sequence.Length > 4096)
+                    {
+                        // Malformed oversized OSC: emit as-is.
+                        output.Append(sequence.ToString());
+                        sequence.Clear();
+                        mode = ParseMode.Ground;
+                    }
+
+                    return;
+            }
+        }
+
+        private void FinishOsc(StringBuilder output, string terminator)
+        {
+            // sequence holds the full OSC including the 'ESC ]' introducer.
+            string body = sequence.ToString();
+            bool isQuery = body == "\x1B]10;?" || body == "\x1B]11;?" || System.Text.RegularExpressions.Regex.IsMatch(body, "^\\x1B\\]4;[0-9]+;\\?$");
+            if (!isQuery)
+            {
+                output.Append(body);
+                output.Append(terminator);
+            }
+
+            sequence.Clear();
+            mode = ParseMode.Ground;
+            escapeSeenInsideOsc = false;
+        }
+
+        private static bool IsDroppedCsi(string sequence)
+        {
+            // sequence shape: ESC [ <params/intermediates> <final byte>
+            string body = sequence.Substring(2, sequence.Length - 3);
+            char finalByte = sequence[sequence.Length - 1];
+            switch (finalByte)
+            {
+                case 'n':
+                    return true;                                   // DSR / cursor-position report requests
+                case 'c':
+                    return true;                                   // DA1/DA2/DA3 capability queries
+                case 'u':
+                    return body.StartsWith("?");                   // kitty keyboard protocol query
+                case 'q':
+                    return body.StartsWith(">");                   // XTVERSION query (DECSCUSR ' q' is kept)
+                case 'p':
+                    return body.StartsWith("?");                   // DECRQM mode request
+                case 't':
+                    return body == "5" || body == "6" || body == "11" || body == "13" || body == "14" || body == "16" || body == "18";
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes an asciicast v2 or v3 file: a JSON header line followed by JSON event
     /// lines. v2 events carry absolute times; v3 events carry intervals since the
     /// previous event (millisecond precision) and the stream is finalized with an
@@ -430,6 +698,11 @@ namespace Bsn.Host.Interop
         private double previousElapsed;
         private Decoder outputDecoder;
         private Decoder inputDecoder;
+        // Issue #20: response-eliciting query sequences are filtered out of
+        // the recorded OUTPUT stream at capture time (the live proxy view is
+        // untouched - it forwards raw bytes). State persists across chunks so
+        // sequences that span read boundaries are filtered correctly.
+        private readonly TerminalQueryFilter outputQueryFilter = new TerminalQueryFilter();
 
         public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
         {
@@ -493,12 +766,20 @@ namespace Bsn.Host.Interop
             Decoder decoder = isInput ? inputDecoder : outputDecoder;
             char[] charBuffer = new char[chunk.Length];
             int charCount = decoder.GetChars(chunk, 0, chunk.Length, charBuffer, 0);
-            string text = Escape(new string(charBuffer, 0, charCount));
+            string text = new string(charBuffer, 0, charCount);
+            if (!isInput)
+            {
+                // Input events are audit data and recorded verbatim; the
+                // OUTPUT stream must not carry query sequences (issue #20).
+                text = outputQueryFilter.Filter(text);
+            }
+
+            string escaped = Escape(text);
             lock (sync)
             {
                 if (writer == null) { return; }
                 writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + text + "\"]");
+                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + escaped + "\"]");
             }
         }
 
@@ -528,6 +809,15 @@ namespace Bsn.Host.Interop
             {
                 if (writer != null)
                 {
+                    // A trailing partial sequence held by the query filter is
+                    // real recorded content (e.g. a lone ESC) - emit it as a
+                    // final event at the last known timestamp.
+                    string filterTail = outputQueryFilter.FlushRemaining();
+                    if (filterTail.Length > 0)
+                    {
+                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + Escape(filterTail) + "\"]");
+                    }
+
                     writer.Dispose();
                     writer = null;
                 }

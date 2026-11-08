@@ -1,6 +1,6 @@
 @{
     RootModule = 'Bsn.Host.psm1'
-    ModuleVersion = '0.2.4'
+    ModuleVersion = '0.2.5'
     GUID = '9d84a7b8-1f2b-4d60-a4bd-3d7ef1d9f337'
     Author = 'BSVN'
     CompanyName = 'BSVN'

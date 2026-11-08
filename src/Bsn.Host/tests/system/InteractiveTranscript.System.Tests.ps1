@@ -205,6 +205,59 @@ $recordingBlock
         }
     }
 
+    # === Issue #20 probe: plays a cast back in a hidden console and reports
+    # how many console INPUT records accumulated during playback. Terminals
+    # answer query sequences (DSR, XTWINOPS pixel size, DA, kitty keyboard,
+    # OSC color queries) by writing response records into the console input
+    # buffer; playback that re-emits the queries therefore pollutes the
+    # prompt (PSReadLine shows the response text as typed input).
+    function Invoke-BsnPlaybackInputBufferProbe {
+        param([string]$CastPath)
+
+        $workDirectory = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ('bsn-playbackprobe-' + [guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType 'Directory' -Path $workDirectory -Force
+        $resultPath = Join-Path -Path $workDirectory -ChildPath 'result.json'
+        $stderrPath = Join-Path -Path $workDirectory -ChildPath 'runner.err'
+        $runnerPath = Join-Path -Path $workDirectory -ChildPath 'runner.ps1'
+
+        $runner = @"
+param(`$RepoRoot, `$CastPath, `$ResultPath)
+`$ErrorActionPreference = 'Stop'
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Common/Bsn.Common.psd1') -Force
+Import-Module (Join-Path `$RepoRoot 'src/Bsn.Host/Bsn.Host.psd1') -Force
+`$before = [Bsn.Host.Interop.ConsoleInputInterop]::GetInputRecordCount()
+Show-InteractiveTranscript -Path `$CastPath -Speed 100
+Start-Sleep -Seconds 2   # let the terminal's query responses settle
+`$after = [Bsn.Host.Interop.ConsoleInputInterop]::GetInputRecordCount()
+@{ Before = `$before; After = `$after } | ConvertTo-Json | Set-Content -LiteralPath `$ResultPath
+"@
+        $runner | Set-Content -LiteralPath $runnerPath -Encoding UTF8
+
+        try {
+            $process = Start-Process -FilePath 'pwsh' `
+                -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath,
+                    '-RepoRoot', ('"{0}"' -f $script:RepoRoot),
+                    '-CastPath', ('"{0}"' -f $CastPath),
+                    '-ResultPath', ('"{0}"' -f $resultPath)) `
+                -WindowStyle 'Hidden' -RedirectStandardError $stderrPath -PassThru
+
+            if (-not $process.WaitForExit(120000)) {
+                $process.Kill()
+                throw 'Playback input-buffer probe timed out after 120 seconds.'
+            }
+
+            if (-not (Test-Path -LiteralPath $resultPath)) {
+                $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '<no stderr>' }
+                throw ("Playback probe produced no result (exit code {0}). Stderr: {1}" -f $process.ExitCode, $stderr)
+            }
+
+            return (Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json)
+        }
+        finally {
+            Remove-Item -LiteralPath $workDirectory -Recurse -Force -ErrorAction 'SilentlyContinue'
+        }
+    }
+
     # === Cross-check source: asciinema (Linux) ===
     # Records via asciinema rec, the reference implementation of the asciicast
     # format. Returns the path to the independent .cast file.
@@ -1029,6 +1082,129 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
 
             $rawStream = Get-BsnCastRawStream -CastPath $castPath
             $rawStream.Contains('METACHAR:a|b&c<d>e^f') | Should -BeTrue -Because 'pipes, ampersands, redirections and carets must survive the recorded command line verbatim (issue #7)'
+        }
+    }
+
+    Context 'Issue #20: response-eliciting query sequences are filtered out of the cast at capture time' {
+        # https://github.com/BSVN/Lmt.Commons/issues/20
+        # Root cause: recorded TUIs (OpenCode/termenv, lipgloss, ncurses)
+        # emit QUERY sequences as part of their output stream - XTWINOPS
+        # pixel-size requests (ESC[14t, the exact artifact behind the
+        # reported '[4;600;1200t' at the prompt), DSR cursor-position
+        # requests (ESC[6n), DA queries, kitty keyboard protocol queries
+        # (ESC[?u), XTVERSION (ESC[>0q), OSC default-color queries. Those
+        # queries are only meaningful while the ORIGINAL application is
+        # connected: a cast that contains them makes ANY player re-broadcast
+        # them, the real terminal answers into the console input buffer, and
+        # PSReadLine consumes the answers as typed text at the prompt.
+        # Root-cause fix: the recorder filters response-eliciting sequences
+        # out of the cast at CAPTURE time (CastWriter/TerminalQueryFilter) -
+        # casts never contain queries, so playback of ours or any other
+        # player is clean by construction.
+
+        It 'filters query sequences out of a recorded BYTE-WRITING child cast' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the query filtering is a ConPTY engine (Windows) behavior.'
+            }
+
+            # The probe file holds UTF-8 bytes for box-drawing borders, an
+            # ASCII marker AND the query families from the issue - exactly
+            # the payload shape of a byte-writing TUI (Go/Node raw writes).
+            $probePath = Join-Path -Path $TestDrive -ChildPath 'probe-utf8.bin'
+            $esc = [string][char]27
+            $bel = [string][char]7
+            $box = [string][char]0x2500
+            $probeText = 'START-MARKER' + "`r`n" + `
+                "$esc[14t" + "$esc[6n" + "$esc[?u" + "$esc[>0q" + "$esc]11;?$bel" + `
+                ([string][char]0x256D) + ($box * 30) + ([string][char]0x256E) + "`r`n" + `
+                ([string][char]0x2502) + ' SALAM-MARKER ' + ([string][char]0x2502) + "`r`n" + `
+                ([string][char]0x2570) + ($box * 30) + ([string][char]0x256F) + "`r`n" + `
+                'END-MARKER'
+            [System.IO.File]::WriteAllBytes($probePath, [System.Text.Encoding]::UTF8.GetBytes($probeText))
+
+            # The scenario writes the file's RAW BYTES straight to the console
+            # output handle (no WriteConsoleW) - byte-writer semantics.
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-bytewriter.ps1'
+            @'
+$bytes = [System.IO.File]::ReadAllBytes($env:BsnSystemTestProbeFile)
+$stdout = [Console]::OpenStandardOutput()
+$stdout.Write($bytes, 0, $bytes.Length)
+$stdout.Flush()
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $env:BsnSystemTestProbeFile = $probePath
+            try {
+                $castPath = Join-Path -Path $TestDrive -ChildPath 'bytewriter.cast'
+                $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+                $result.ExitCode | Should -Be 0
+            }
+            finally {
+                Remove-Item 'Env:BsnSystemTestProbeFile' -ErrorAction 'SilentlyContinue'
+            }
+
+            $castText = [System.IO.File]::ReadAllText($castPath, [System.Text.Encoding]::UTF8)
+
+            # The payload must survive.
+            $castText.Contains('SALAM-MARKER') | Should -BeTrue -Because 'the ASCII payload must be captured'
+            ([regex]::Matches($castText, [regex]::Escape($box))).Count | Should -Be 60 -Because 'all sixty horizontal border characters must survive'
+            ([regex]::Matches($castText, [regex]::Escape([string][char]0x256D))).Count | Should -Be 1 -Because 'the top-left rounded corner must survive'
+            ([regex]::Matches($castText, [regex]::Escape([string][char]0x256F))).Count | Should -Be 1 -Because 'the bottom-right rounded corner must survive'
+
+            # The queries must NOT be in the cast (stored JSON-escaped: ESC is \u001b).
+            foreach ($escapedQuery in @('\u001b[14t', '\u001b[6n', '\u001b[?u', '\u001b[>0q', '\u001b]11;?', '\u001b]10;?')) {
+                $castText.Contains($escapedQuery) | Should -BeFalse -Because ("the cast must not contain the query sequence {0} - playback would elicit a terminal response into the console input buffer (issue #20)" -f $escapedQuery)
+            }
+
+            # Filtering must not introduce corruption of its own.
+            ([regex]::Matches($castText, [regex]::Escape([string][char]0xFFFD))).Count | Should -Be 0 -Because 'the filter must not create U+FFFD replacement characters'
+        }
+
+        It 'playback of a recorded session leaves the console input buffer clean' {
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+            if (-not $script:IsWindowsPlatform) {
+                Set-ItResult -Skipped -Because 'the console input buffer is a Windows (ConPTY/conhost) concept.'
+            }
+
+            # Record the byte-writing child (query bytes in its output), then
+            # play the resulting cast back: with queries filtered at capture
+            # time the terminal has nothing to answer into the input buffer.
+            $probePath = Join-Path -Path $TestDrive -ChildPath 'probe-utf8.bin'
+            $esc = [string][char]27
+            $bel = [string][char]7
+            $probeText = "$esc[14t$esc[6n" + "$esc]11;?$bel" + 'END-MARKER'
+            [System.IO.File]::WriteAllBytes($probePath, [System.Text.Encoding]::UTF8.GetBytes($probeText))
+
+            $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-bytewriter2.ps1'
+            @'
+$bytes = [System.IO.File]::ReadAllBytes($env:BsnSystemTestProbeFile)
+$stdout = [Console]::OpenStandardOutput()
+$stdout.Write($bytes, 0, $bytes.Length)
+$stdout.Flush()
+'@ | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+
+            $env:BsnSystemTestProbeFile = $probePath
+            try {
+                $castPath = Join-Path -Path $TestDrive -ChildPath 'playback-clean.cast'
+                $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+                $result.ExitCode | Should -Be 0
+            }
+            finally {
+                Remove-Item 'Env:BsnSystemTestProbeFile' -ErrorAction 'SilentlyContinue'
+            }
+
+            $probe = Invoke-BsnPlaybackInputBufferProbe -CastPath $castPath
+            $probe.After | Should -Be 0 -Because ('playback must not leave terminal query responses in the console input buffer where PSReadLine would show them as typed text (the reported [4;600;1200t artifact, issue #20); input records after playback: {0}' -f $probe.After)
         }
     }
 

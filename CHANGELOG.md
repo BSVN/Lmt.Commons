@@ -4,6 +4,32 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
+## [Bsn.Host 0.2.5] - 2026-11-08
+
+### Fixed
+
+- Playback of TUI recordings no longer leaves garbage like
+  `[4;600;1200t` typed at the prompt (issue #20). Root cause: recorded
+  TUI applications query the terminal they are attached to - XTWINOPS
+  pixel-size requests (`ESC[14t`), DSR cursor-position requests
+  (`ESC[6n`), device attributes, kitty keyboard protocol queries
+  (`ESC[?u`), XTVERSION (`ESC[>0q`) and OSC default-color queries
+  (`ESC]11;?`) - and those queries were captured into the cast. Any
+  player re-broadcasts them; the real terminal writes its answers into
+  the console input buffer, where PSReadLine consumes them as typed
+  text. Fixed at the root, in the recorder: `CastWriter` now streams
+  output through a stateful `TerminalQueryFilter` that drops
+  response-eliciting sequences at CAPTURE time (the filter state
+  persists across chunk boundaries, so sequences split across reads are
+  filtered correctly; a truncated trailing sequence is flushed verbatim
+  at the end of the stream). The same filtering is applied by
+  `ConvertTo-BsnAsciicast` for Unix `script(1)` conversions, so casts
+  from both engines are query-free by construction. Set forms, answers
+  and ordinary content are preserved: SGR, cursor movement, alternate
+  screen, OSC titles, XTWINOPS SET forms (`CSI 4;height;width t`),
+  kitty push/pop, DECSCUSR and DECRPM answers.
+  [#20](https://github.com/BSVN/Lmt.Commons/issues/20)
+
 ## [Bsn.Host 0.2.4] - 2026-11-08
 
 ### Fixed
