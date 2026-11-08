@@ -19,6 +19,41 @@ namespace Bsn.Host.Interop
     }
 
     /// <summary>
+    /// Console INPUT buffer diagnostics and maintenance (issue #20): the
+    /// terminal answers query sequences (DSR, DA, XTWINOPS pixel-size,
+    /// kitty keyboard, OSC color queries) by writing response records into
+    /// the console input buffer. Playback that re-emits queries therefore
+    /// pollutes the prompt with typed-looking response text; the module
+    /// scrubs queries from playback and flushes the input buffer afterwards.
+    /// Public because PowerShell script (outside this assembly) drives it.
+    /// </summary>
+    public static class ConsoleInputInterop
+    {
+        private const int STD_INPUT_HANDLE = -10;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetNumberOfConsoleInputEvents(IntPtr hConsoleInput, out uint lpcNumberOfEvents);
+
+        /// <summary>
+        /// Number of pending records in the standard input buffer of the
+        /// current console.
+        /// </summary>
+        public static int GetInputRecordCount()
+        {
+            uint count;
+            if (!GetNumberOfConsoleInputEvents(GetStdHandle(STD_INPUT_HANDLE), out count))
+            {
+                throw new InvalidOperationException("GetNumberOfConsoleInputEvents failed with Win32 error " + Marshal.GetLastWin32Error());
+            }
+
+            return (int)count;
+        }
+    }
+
+    /// <summary>
     /// Records a command line inside a Windows pseudo-console (ConPTY), teeing
     /// the VT stream with timestamps into an asciicast v2 file. Modelled on the
     /// EchoCon sample from the microsoft/terminal repository.
@@ -430,6 +465,11 @@ namespace Bsn.Host.Interop
         private double previousElapsed;
         private Decoder outputDecoder;
         private Decoder inputDecoder;
+        // Issue #20: response-eliciting query sequences are filtered out of
+        // the recorded OUTPUT stream at capture time (the live proxy view is
+        // untouched - it forwards raw bytes). State persists across chunks so
+        // sequences that span read boundaries are filtered correctly.
+        private readonly TerminalQueryFilter outputQueryFilter = new TerminalQueryFilter();
 
         public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
         {
@@ -493,12 +533,20 @@ namespace Bsn.Host.Interop
             Decoder decoder = isInput ? inputDecoder : outputDecoder;
             char[] charBuffer = new char[chunk.Length];
             int charCount = decoder.GetChars(chunk, 0, chunk.Length, charBuffer, 0);
-            string text = Escape(new string(charBuffer, 0, charCount));
+            string text = new string(charBuffer, 0, charCount);
+            if (!isInput)
+            {
+                // Input events are audit data and recorded verbatim; the
+                // OUTPUT stream must not carry query sequences (issue #20).
+                text = outputQueryFilter.Filter(text);
+            }
+
+            string escaped = Escape(text);
             lock (sync)
             {
                 if (writer == null) { return; }
                 writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + text + "\"]");
+                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + escaped + "\"]");
             }
         }
 
@@ -528,6 +576,15 @@ namespace Bsn.Host.Interop
             {
                 if (writer != null)
                 {
+                    // A trailing partial sequence held by the query filter is
+                    // real recorded content (e.g. a lone ESC) - emit it as a
+                    // final event at the last known timestamp.
+                    string filterTail = outputQueryFilter.FlushRemaining();
+                    if (filterTail.Length > 0)
+                    {
+                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + Escape(filterTail) + "\"]");
+                    }
+
                     writer.Dispose();
                     writer = null;
                 }

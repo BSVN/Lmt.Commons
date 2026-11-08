@@ -115,9 +115,27 @@ function Invoke-ModuleCompile {
         # after Update-Module fails with FileLoadException (.NET refuses a
         # second assembly with the same identity in one process).
         # https://github.com/BSVN/Lmt.Commons/issues/15
-        $manifestPath = Join-Path -Path $project.DirectoryName -ChildPath ($project.BaseName + '.psd1')
+        #
+        # The owning manifest is resolved by WALKING UP from the project
+        # directory: interop projects live at <Module>/<Name>.csproj, NUnit
+        # test projects at <Module>/tests/<Name>/<Name>.csproj. Without the
+        # stamp, building the test project transitively rebuilds the
+        # referenced interop assembly unstamped AFTER the stamped build and
+        # breaks the version-identity invariant before the tests run.
+        $manifestPath = $null
+        $manifestDirectory = $project.Directory
+        while ($manifestDirectory -and (-not $manifestPath)) {
+            $manifestCandidate = Join-Path -Path $manifestDirectory.FullName -ChildPath ($manifestDirectory.Name + '.psd1')
+            if (Test-Path -LiteralPath $manifestCandidate) {
+                $manifestPath = $manifestCandidate
+            }
+            else {
+                $manifestDirectory = $manifestDirectory.Parent
+            }
+        }
+
         $buildArguments = @('build', $project.FullName, '--configuration', 'Release', '--nologo', '--verbosity', 'quiet')
-        if (Test-Path -LiteralPath $manifestPath) {
+        if ($manifestPath) {
             $moduleVersion = (Import-PowerShellDataFile -LiteralPath $manifestPath).ModuleVersion
             if ($moduleVersion) {
                 $buildArguments += ('-p:Version=' + $moduleVersion)
@@ -272,6 +290,46 @@ $taskMap = @{
                 throw ('{0}: {1} of {2} test(s) failed.' -f $module.Name, $result.FailedCount, $result.TotalCount)
             }
             Write-Host ("==> {0}: {1} test(s) passed." -f $module.Name, $result.PassedCount)
+
+            # C# unit tests (NUnit) under tests/csharp, with coverlet code
+            # coverage producing Cobertura XML for the Codecov upload
+            # (out/csharp-coverage.<Module>.xml matches the dedicated CI
+            # upload glob). The module csproj excludes tests/** from its own
+            # compilation, so these tests never ship in the assembly.
+            $csharpTestProjects = @(Get-ChildItem -Path (Join-Path -Path $module.Path -ChildPath 'tests/csharp') -Filter '*.csproj' -File -ErrorAction 'SilentlyContinue')
+            foreach ($testProject in $csharpTestProjects) {
+                $dotnet = Get-Command -Name 'dotnet' -ErrorAction 'SilentlyContinue'
+                if (-not $dotnet) {
+                    Write-Warning -Message ("C# tests found for {0} but dotnet is not on PATH; skipping the NUnit suite." -f $module.Name)
+                    continue
+                }
+
+                Write-Host ("==> Testing C# ({0})" -f $testProject.BaseName)
+                # -p:Version re-stamps the referenced interop assembly during
+                # this incremental build: without it, dotnet test would
+                # overwrite lib/<name>.dll with an unstamped 1.0.0.0 assembly
+                # and break the version-identity invariant (issue #15).
+                $moduleVersion = (Import-PowerShellDataFile -LiteralPath $module.ManifestPath).ModuleVersion
+                $coverageResultsDirectory = Join-Path -Path $script:OutputDirectory -ChildPath ('csharp-coverage-run-' + [guid]::NewGuid().ToString('N'))
+                & $dotnet.Source test $testProject.FullName --configuration 'Release' --nologo `
+                    ('-p:Version=' + $moduleVersion) `
+                    '--collect:XPlat Code Coverage;Format=cobertura' `
+                    --results-directory $coverageResultsDirectory `
+                    --logger 'console;verbosity=minimal'
+                if ($LASTEXITCODE -ne 0) {
+                    throw ("C# tests failed for '{0}'." -f $testProject.FullName)
+                }
+
+                $coberturaFile = Get-ChildItem -Path $coverageResultsDirectory -Filter 'coverage.cobertura.xml' -Recurse -File |
+                    Select-Object -First 1
+                if ($coberturaFile) {
+                    Copy-Item -LiteralPath $coberturaFile.FullName -Destination (Join-Path -Path $script:OutputDirectory -ChildPath ('csharp-coverage.{0}.xml' -f $module.Name)) -Force
+                    Remove-Item -LiteralPath $coverageResultsDirectory -Recurse -Force -ErrorAction 'SilentlyContinue'
+                }
+                else {
+                    Write-Warning -Message 'coverlet produced no Cobertura report; C# coverage will not be uploaded.'
+                }
+            }
         }
     }
 

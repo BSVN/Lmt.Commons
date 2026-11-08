@@ -226,6 +226,15 @@ before:
   rhubarb-geek-nz/console-logger, cited in RFC 421). All cross-check
   tests skip gracefully when their tool is unavailable. See
   tests/system/README.md for the full architecture diagram.
+- C# unit tests (NUnit + coverlet) live in `src/Bsn.Host/tests/csharp`
+  and run inside the build's Test task (`dotnet test`, Cobertura
+  coverage uploaded to Codecov under the `csharp` flag). The module
+  csproj excludes `tests/**` from the shipped assembly. `codecov.yml`
+  explicitly ignores the C# sources that cannot be unit tested
+  (`PtyRecorder.cs` ConPTY engine/CastWriter/console P/Invoke,
+  `PowerProf.cs` Win32 interop) - do not replace those explicit
+  per-file ignores with a blanket C# ignore, and keep new testable C#
+  in its own covered file (e.g. `TerminalQueryFilter.cs`).
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
   `ci`); dormant nuget entries per csproj for future PackageReferences.

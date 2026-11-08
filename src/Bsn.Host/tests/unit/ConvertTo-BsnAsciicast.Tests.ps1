@@ -171,4 +171,50 @@ Describe 'ConvertTo-BsnAsciicast' {
             $firstLine | Should -BeLike '*"version"*'
         }
     }
+
+    Context 'query sequences are filtered out of converted casts (issue #20)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/20
+        # Unix script(1) logs carry the same response-eliciting query bytes
+        # from recorded children (XTWINOPS, DSR, OSC color queries). Casts
+        # must not contain them: any player re-broadcasts them and the
+        # terminal answers into the console input buffer.
+        It 'filters query sequences from the timing-exact conversion while keeping the payload' {
+            $esc = [string][char]27
+            $bel = [string][char]7
+            $box = [string][char]0x2500
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'issue20.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'issue20.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'issue20.cast'
+
+            $logText = 'START-MARKER' + "`r`n" + `
+                "$esc[14t" + "$esc[6n" + "$esc[?u" + "$esc[>0q" + "$esc]11;?$bel" + `
+                ([string][char]0x256D) + ($box * 30) + ([string][char]0x256E) + "`r`n" + `
+                'END-MARKER'
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes($logText))
+
+            # Two timing chunks that split the stream mid-way: the filter must
+            # hold partial sequences across events.
+            $total = [System.IO.File]::ReadAllBytes($outputPath).Length
+            $firstChunk = 40
+            "$firstChunk $firstChunk`n$($total - $firstChunk) $($total - $firstChunk)" |
+                Set-Content -LiteralPath $timingPath -Encoding UTF8
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
+
+            $castText = [System.IO.File]::ReadAllText($castPath, [System.Text.Encoding]::UTF8)
+
+            # Payload survives.
+            $castText.Contains('START-MARKER') | Should -BeTrue
+            $castText.Contains('END-MARKER') | Should -BeTrue
+            ([regex]::Matches($castText, [regex]::Escape($box))).Count | Should -Be 30
+
+            # Queries are gone (stored JSON-escaped: ESC is \u001b).
+            foreach ($escapedQuery in @('\u001b[14t', '\u001b[6n', '\u001b[?u', '\u001b[>0q', '\u001b]11;?')) {
+                $castText.Contains($escapedQuery) | Should -BeFalse -Because ("converted casts must not contain the query sequence {0} (issue #20)" -f $escapedQuery)
+            }
+
+            # No new corruption introduced by the filter.
+            ([regex]::Matches($castText, [regex]::Escape([string][char]0xFFFD))).Count | Should -Be 0
+        }
+    }
 }

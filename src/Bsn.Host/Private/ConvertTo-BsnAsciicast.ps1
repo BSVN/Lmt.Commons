@@ -114,10 +114,17 @@ function ConvertTo-BsnAsciicast {
         }
 
         $previousTime = 0.0
+        # Issue #20: response-eliciting query sequences are filtered out of
+        # the cast here too - Unix script(1) logs carry the same query bytes
+        # from the recorded children, and casts must not contain them (any
+        # player re-broadcasts them; the terminal answers into the console
+        # input buffer). The filter state persists across events, which
+        # handles sequences that span timing-chunk boundaries.
+        $queryFilter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
         foreach ($castEvent in $events) {
             $charBuffer = [char[]]::new($castEvent.Count)
             $charCount = $decoder.GetChars($outputBytes, $castEvent.Offset, $castEvent.Count, $charBuffer, 0)
-            $eventText = [string]::new($charBuffer, 0, $charCount)
+            $eventText = $queryFilter.Filter([string]::new($charBuffer, 0, $charCount))
             $jsonText = $eventText | ConvertTo-Json -Compress
 
             $formattedTime = if ($CastVersion -eq 3) {
@@ -132,6 +139,14 @@ function ConvertTo-BsnAsciicast {
             }
 
             $writer.WriteLine(('[{0}, "o", {1}]' -f $formattedTime, $jsonText))
+        }
+
+        # A trailing partial query/sequence held by the filter is real recorded
+        # content - emit it as a final event at the last known timestamp.
+        $filterTail = $queryFilter.FlushRemaining()
+        if ($filterTail.Length -gt 0) {
+            $formattedTime = if ($CastVersion -eq 3) { '0' } else { $previousTime.ToString('0.######', $invariantCulture) }
+            $writer.WriteLine(('[{0}, "o", {1}]' -f $formattedTime, ($filterTail | ConvertTo-Json -Compress)))
         }
 
         if ($CastVersion -eq 3) {

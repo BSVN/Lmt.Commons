@@ -59,55 +59,55 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # winget is the idiomatic installer (review decision). The version is
-          # pinned with --version/--exact, and winget verifies the downloaded
-          # installer against the winget-pkgs manifest InstallerSha256 during
-          # install - no manual hash step needed
-          # (https://learn.microsoft.com/en-us/windows/package-manager/winget/hash).
-          # The issue #5 stress test depends on this binary: if the install
-          # fails the job fails - never a silent skip.
-          winget install --id JanDeDobbeleer.OhMyPosh --version 31.9.1 --exact --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
+          # Bounded, pinned direct download of the portable binary. The
+          # winget package for this version is an MSIX whose deployment and
+          # app-execution alias HUNG hosted Windows runners indefinitely at
+          # this step (two stuck runs observed), and executing the alias
+          # from pwsh fails under redirected stdio - so CI downloads the
+          # pinned release artifact directly and verifies it by SHA-256
+          # (asset of the v31.9.1 release, verified locally). Locally,
+          # 'winget install JanDeDobbeleer.OhMyPosh' remains a fine way to
+          # install the tool.
+          $version = '31.9.1'
+          $expectedSha256 = 'C2B34D2E8D9DB243172170CE4ADB70B0BD1476D29D355BC783CFA886724EB27E'
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'oh-my-posh'
+          New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
+          $exePath = Join-Path $installDirectory 'oh-my-posh.exe'
 
-          # The winget package is an MSIX (ohmyposh.cli). Its public entry
-          # point is the app execution alias in WindowsApps - a reparse point
-          # that fails to execute from pwsh under redirected stdio on hosted
-          # runners ("StandardOutputEncoding is only supported when standard
-          # output is redirected"). Resolve the REAL package binary via
-          # Get-AppxPackage and use it for verification and PATH.
-          $appx = Get-AppxPackage -Name 'ohmyposh.cli' -ErrorAction Stop
-          if (-not $appx) {
-            throw 'ohmyposh.cli package not found after winget install.'
-          }
-          if ($appx.Version -ne '31.9.1.0') {
-            throw "oh-my-posh package version $($appx.Version) installed; expected 31.9.1.0."
-          }
+          Invoke-WebRequest `
+            -Uri "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v$version/posh-windows-amd64.exe" `
+            -OutFile $exePath -TimeoutSec 120
 
-          $packageExe = Join-Path $appx.InstallLocation 'oh-my-posh.exe'
-          if (-not (Test-Path -LiteralPath $packageExe)) {
-            throw "oh-my-posh.exe not found inside the package at $packageExe."
+          $actualSha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "oh-my-posh $version SHA-256 mismatch: expected $expectedSha256, got $actualSha256."
           }
 
           # Hard verification: the binary must execute and report the pinned version.
-          $reported = ("{0}" -f (& $packageExe version)).Trim()
+          $reported = ("{0}" -f (& $exePath version)).Trim()
           if ($LASTEXITCODE -ne 0 -or $reported -ne '31.9.1') {
             throw "oh-my-posh reported '$reported' (exit $LASTEXITCODE); expected 31.9.1."
           }
-          Write-Host "oh-my-posh $reported installed via winget ($packageExe)"
+          Write-Host "oh-my-posh $reported installed (SHA-256 verified, portable)"
 
-          # GITHUB_PATH is prepended, so 'oh-my-posh' resolves to the package
-          # binary, not the WindowsApps alias reparse point.
-          Add-Content -LiteralPath $env:GITHUB_PATH -Value $appx.InstallLocation
+          # GITHUB_PATH is prepended, so the recorded session resolves
+          # 'oh-my-posh' to this pinned portable binary.
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $installDirectory
 
-          # The MSIX ships the themes inside the package directory; point the
-          # stress test at the glyph-rich atomic theme when present (it falls
-          # back to the default theme, which still renders nerd-font glyphs).
-          $themesDir = Join-Path $appx.InstallLocation 'themes'
-          if (Test-Path -LiteralPath (Join-Path $themesDir 'atomic.omp.json')) {
-            Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$themesDir"
+          # The stress test prefers the glyph-rich atomic theme; ship it from
+          # the same pinned release. A theme download failure is non-fatal -
+          # the test falls back to the default theme, which still renders
+          # nerd-font glyphs.
+          try {
+            $themePath = Join-Path $installDirectory 'atomic.omp.json'
+            Invoke-WebRequest `
+              -Uri "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/v$version/themes/atomic.omp.json" `
+              -OutFile $themePath -TimeoutSec 60
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value "POSH_THEMES_PATH=$installDirectory"
             Write-Host 'POSH_THEMES_PATH set; the stress test will use atomic.omp.json'
           }
-          else {
-            Write-Host 'No themes directory found; the stress test will render the default theme.'
+          catch {
+            Write-Host "atomic.omp.json download failed ($($_.Exception.Message)); the stress test will render the default theme."
           }
 
       - name: Bootstrap development dependencies
@@ -125,6 +125,14 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: out/testResults.*.xml
           if-no-files-found: ignore
+      - name: Upload C# coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        if: always()
+        with:
+          files: out/csharp-coverage.*.xml
+          flags: csharp,${{ matrix.os }}
+          fail_ci_if_error: false
+          use_oidc: true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
