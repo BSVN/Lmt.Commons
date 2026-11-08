@@ -1,8 +1,11 @@
-# Codecov receives PowerShell coverage only (JaCoCo-style XML produced by
-# `build.ps1 -Task Test -CodeCoverage` from the Pester run). The C# interop
-# sources have no coverage instrumentation in this repo; they are gated by
-# CodeQL, the .NET build (warnings-as-errors) and PSScriptAnalyzer instead.
-# Excluding them keeps patch/project coverage meaningful instead of counting
-# uninstrumented C# lines as misses.
+# Codecov receives PowerShell coverage from the Pester run and C# coverage
+# from the NUnit suite (coverlet Cobertura, uploaded with the `csharp` flag).
+#
+# Explicitly ignored: C# sources that cannot be unit tested (P/Invoke against
+# kernel32 and the ConPTY engine, Win32 power-management interop). They are
+# gated by CodeQL, the .NET build and PSScriptAnalyzer instead. The testable
+# C# (TerminalQueryFilter.cs) is NOT ignored - it is measured through the
+# NUnit suite in src/Bsn.Host/tests/csharp.
 ignore:
-  - "src/**/*.cs"
+  - "src/Bsn.Host/src/PtyRecorder.cs"
+  - "src/Bsn.SystemManagement/src/PowerProf.cs"

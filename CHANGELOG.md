@@ -4,7 +4,7 @@ All notable changes to the modules in this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the modules adhere to [Semantic Versioning](https://semver.org/).
 
-## [Bsn.Host 0.2.5] - 2026-11-08
+## [Unreleased]
 
 ### Fixed
 
@@ -29,11 +29,6 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   screen, OSC titles, XTWINOPS SET forms (`CSI 4;height;width t`),
   kitty push/pop, DECSCUSR and DECRPM answers.
   [#20](https://github.com/BSVN/Lmt.Commons/issues/20)
-
-## [Bsn.Host 0.2.4] - 2026-11-08
-
-### Fixed
-
 - **Every recording on Ubuntu 24.04 and 26.04 (util-linux 2.39 / 2.41)
   came back empty**: the script(1) engine combined `--log-out <file>`
   with a trailing positional typescript file (`/dev/null`), which
@@ -52,6 +47,13 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A C# unit test project (`src/Bsn.Host/tests/csharp`, NUnit +
+  coverlet) covering the capture-time query filter: every query family
+  dropped, set forms/answers preserved, sequences split across chunk
+  boundaries handled, end-of-stream flush semantics. Run through the
+  build's Test task with Cobertura coverage uploaded to Codecov (flag
+  `csharp`); the C# sources that cannot be unit tested are explicitly
+  ignored in `codecov.yml`.
 - A CI-runnable Linux/macOS system test for `-Command` recordings via
   the script(1) engine (the engine had zero end-to-end CI coverage:
   every other Unix system test skips under CI redirected stdio). It

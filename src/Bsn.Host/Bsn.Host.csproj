@@ -12,4 +12,10 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Test sources under tests/ (Pester .ps1 and the NUnit C# project) must
+         not be compiled into the shipped interop assembly. -->
+    <Compile Remove="tests\**\*.cs" />
+  </ItemGroup>
+
 </Project>
