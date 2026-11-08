@@ -246,6 +246,17 @@ before:
   GitHub Release**. It runs the full gate, then publishes every module whose
   manifest version is newer than the gallery version (idempotent, safe to
   re-run). Manual dispatch supports `dry_run`.
+- Release names: the GitHub Release name is exactly the tag (e.g. `v0.2.4`) -
+  never add descriptive sentences or summaries to the name; descriptions
+  belong in the release notes body.
+- Version changes: pull requests must never modify `ModuleVersion` in any
+  psd1, never add release dates to `CHANGELOG.md`, and never convert the
+  `## [Unreleased]` section into a dated versioned section. Fixes accumulate
+  under `## [Unreleased]` no matter how many PRs stack up (fold into the same
+  unreleased changeset instead of opening a new version), and the version
+  bump + `Unreleased`-to-versioned rename + tag + GitHub Release happen
+  together in the single intentional release step - usually right after the
+  last fix PR merges.
 - Gallery auth = `PS_GALLERY_KEY` repo secret (already configured). Never
   put the API key in any repo file, workflow, or commit.
 - Every release also mirrors all modules to GitHub Packages
