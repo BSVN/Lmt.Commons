@@ -479,6 +479,15 @@ namespace Bsn.Host.Interop
         private readonly StringBuilder sequence = new StringBuilder(64);
         private bool escapeSeenInsideOsc;
 
+        // Bounded pattern (S6444): the palette-query body is tiny and the
+        // pattern has no nested quantifiers, but the timeout makes the
+        // worst case explicit.
+        private static readonly System.Text.RegularExpressions.Regex OscPaletteQueryRegex =
+            new System.Text.RegularExpressions.Regex(
+                "^\\x1B\\]4;[0-9]+;\\?$",
+                System.Text.RegularExpressions.RegexOptions.Compiled,
+                TimeSpan.FromMilliseconds(100));
+
         /// <summary>
         /// Filters one chunk of decoded VT text and returns the part that can
         /// be emitted. A trailing partial sequence is held back until the
@@ -521,9 +530,7 @@ namespace Bsn.Host.Interop
                 case ParseMode.Ground:
                     if (ch == '\x1B')
                     {
-                        sequence.Clear();
-                        sequence.Append(ch);
-                        mode = ParseMode.Escape;
+                        BeginSequence(ch);
                     }
                     else
                     {
@@ -547,9 +554,7 @@ namespace Bsn.Host.Interop
                     {
                         // Other escape introducers (charset selection, ESC 7,
                         // ESC D ...) are not queries - emit verbatim.
-                        output.Append(sequence.ToString());
-                        sequence.Clear();
-                        mode = ParseMode.Ground;
+                        EmitSequence(output);
                     }
 
                     return;
@@ -559,10 +564,8 @@ namespace Bsn.Host.Interop
                     {
                         // A new sequence starts before this one ended: emit
                         // the malformed one as-is and restart.
-                        output.Append(sequence.ToString());
-                        sequence.Clear();
-                        sequence.Append(ch);
-                        mode = ParseMode.Escape;
+                        EmitSequence(output);
+                        BeginSequence(ch);
                         return;
                     }
 
@@ -570,13 +573,15 @@ namespace Bsn.Host.Interop
                     {
                         // Final byte: keep or drop the whole sequence.
                         sequence.Append(ch);
-                        if (!IsDroppedCsi(sequence.ToString()))
+                        if (IsDroppedCsi(sequence.ToString()))
                         {
-                            output.Append(sequence.ToString());
+                            ResetToGround();
+                        }
+                        else
+                        {
+                            EmitSequence(output);
                         }
 
-                        sequence.Clear();
-                        mode = ParseMode.Ground;
                         return;
                     }
 
@@ -584,9 +589,7 @@ namespace Bsn.Host.Interop
                     {
                         // Control character inside a CSI: emit the sequence
                         // as-is and re-process the character in Ground mode.
-                        output.Append(sequence.ToString());
-                        sequence.Clear();
-                        mode = ParseMode.Ground;
+                        EmitSequence(output);
                         ProcessChar(ch, output);
                         return;
                     }
@@ -595,9 +598,7 @@ namespace Bsn.Host.Interop
                     if (sequence.Length > 128)
                     {
                         // Malformed oversized sequence: emit as-is.
-                        output.Append(sequence.ToString());
-                        sequence.Clear();
-                        mode = ParseMode.Ground;
+                        EmitSequence(output);
                     }
 
                     return;
@@ -633,29 +634,45 @@ namespace Bsn.Host.Interop
                     if (sequence.Length > 4096)
                     {
                         // Malformed oversized OSC: emit as-is.
-                        output.Append(sequence.ToString());
-                        sequence.Clear();
-                        mode = ParseMode.Ground;
+                        EmitSequence(output);
                     }
 
                     return;
             }
         }
 
+        private void BeginSequence(char firstChar)
+        {
+            sequence.Clear();
+            sequence.Append(firstChar);
+            mode = ParseMode.Escape;
+        }
+
+        private void EmitSequence(StringBuilder output)
+        {
+            output.Append(sequence.ToString());
+            ResetToGround();
+        }
+
+        private void ResetToGround()
+        {
+            sequence.Clear();
+            mode = ParseMode.Ground;
+            escapeSeenInsideOsc = false;
+        }
+
         private void FinishOsc(StringBuilder output, string terminator)
         {
             // sequence holds the full OSC including the 'ESC ]' introducer.
             string body = sequence.ToString();
-            bool isQuery = body == "\x1B]10;?" || body == "\x1B]11;?" || System.Text.RegularExpressions.Regex.IsMatch(body, "^\\x1B\\]4;[0-9]+;\\?$");
+            bool isQuery = body == "\x1B]10;?" || body == "\x1B]11;?" || OscPaletteQueryRegex.IsMatch(body);
             if (!isQuery)
             {
                 output.Append(body);
                 output.Append(terminator);
             }
 
-            sequence.Clear();
-            mode = ParseMode.Ground;
-            escapeSeenInsideOsc = false;
+            ResetToGround();
         }
 
         private static bool IsDroppedCsi(string sequence)
