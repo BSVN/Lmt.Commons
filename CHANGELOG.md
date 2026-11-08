@@ -47,6 +47,11 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `Suspend-Computer -After <seconds>`: suspends the target after a delay
+  counted on the target computer (default 0 = immediate). Works locally
+  and over PowerShell remoting without installing the module remotely;
+  press Ctrl+C during the countdown to cancel a pending suspension.
+  [#17](https://github.com/BSVN/Lmt.Commons/issues/17)
 - A C# unit test project (`src/Bsn.Host/tests/csharp`, NUnit +
   coverlet) covering the capture-time query filter: every query family
   dropped, set forms/answers preserved, sequences split across chunk
