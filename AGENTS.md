@@ -246,6 +246,9 @@ before:
   GitHub Release**. It runs the full gate, then publishes every module whose
   manifest version is newer than the gallery version (idempotent, safe to
   re-run). Manual dispatch supports `dry_run`.
+- Release names: the GitHub Release name is exactly the tag (e.g. `v0.2.4`) -
+  never add descriptive sentences or summaries to the name; descriptions
+  belong in the release notes body.
 - Gallery auth = `PS_GALLERY_KEY` repo secret (already configured). Never
   put the API key in any repo file, workflow, or commit.
 - Every release also mirrors all modules to GitHub Packages
