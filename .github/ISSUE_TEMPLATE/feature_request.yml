@@ -1,0 +1,71 @@
+name: Feature request
+description: Suggest an idea for a Bsn.* module
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! A few notes up front:
+
+        - New modules are scaffolded with the repo's Plaster template; ideas
+          for a whole new `Bsn.*` module are welcome here too.
+        - This is a monorepo for the `Bsn.*` family - mention which module
+          (existing or new) your idea belongs to.
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Related module
+      options:
+        - Bsn.Common
+        - Bsn.Host
+        - Bsn.SystemManagement
+        - New module
+        - Multiple / other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to achieve? What does not work today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        Ideally with example cmdlet names and parameters, e.g.
+        `Get-BsnSomething -Name <String> [-All]`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, existing tools, or workarounds.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: cross-platform
+    attributes:
+      label: Platform expectations
+      description: Should this work everywhere, or is it inherently OS-specific (like suspend)?
+      options:
+        - label: Should work on Windows PowerShell 5.1 and PowerShell 7
+        - label: Should work cross-platform (Windows, Linux, macOS)
+        - label: Windows-only / OS-specific feature
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false
