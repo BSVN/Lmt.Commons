@@ -19,8 +19,18 @@ function Invoke-BsnLocalSuspend {
     param(
         [switch]$Hibernate,
 
-        [switch]$Force
+        [switch]$Force,
+
+        [int]$After = 0
     )
+
+    # Grace period for the '-After' delay (issue #17): the countdown runs on
+    # the target machine, and Ctrl+C during the sleep cancels the pending
+    # suspension because the pipeline stops before the suspend call.
+    if ($After -gt 0) {
+        Write-Warning -Message ("Suspending in {0} seconds; press Ctrl+C to cancel." -f $After)
+        Start-Sleep -Seconds $After
+    }
 
     if ((Get-BsnOperatingSystem) -eq [BsnOperatingSystem]::Windows) {
         $succeeded = [Bsn.SystemManagement.Interop.PowerProf]::SetSuspendState([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent, $false)

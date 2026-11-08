@@ -20,10 +20,19 @@
 param(
     [bool]$Hibernate,
 
-    [bool]$Force
+    [bool]$Force,
+
+    [int]$After = 0
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Grace period for the '-After' delay (issue #17): the countdown runs on the
+# target machine, and Ctrl+C during the sleep cancels the pending suspension.
+if ($After -gt 0) {
+    Write-Warning -Message ("Suspending in {0} seconds; press Ctrl+C to cancel." -f $After)
+    Start-Sleep -Seconds $After
+}
 
 function Get-TargetPlatform {
     # PSVersionTable keys 'Platform' and 'OS' do not exist on Windows

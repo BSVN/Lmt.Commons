@@ -60,9 +60,56 @@ Describe 'Suspend-Computer' {
             Should -Invoke -CommandName Invoke-Command -ModuleName 'Bsn.SystemManagement' -Times 1 -Exactly -Scope It
         }
 
+        It 'passes the -After delay to the remote action script (issue #17)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/17
+            Suspend-Computer -ComputerName 'REMOTE-03' -After 30 -Force
+            Should -Invoke -CommandName Invoke-Command -ModuleName 'Bsn.SystemManagement' -Times 1 -Exactly -Scope It `
+                -ParameterFilter { $ArgumentList.Count -eq 3 -and $ArgumentList[2] -eq 30 }
+        }
+
         It 'writes an error when remoting fails' {
             Mock -CommandName Invoke-Command -ModuleName 'Bsn.SystemManagement' { throw 'remoting unavailable' }
             { Suspend-Computer -ComputerName 'REMOTE-02' -Force -ErrorAction 'Stop' } | Should -Throw
+        }
+    }
+
+    Context 'delayed suspend (-After)' {
+        # https://github.com/BSVN/Lmt.Commons/issues/17
+        BeforeEach {
+            Mock -CommandName Invoke-BsnLocalSuspend -ModuleName 'Bsn.SystemManagement' { }
+            Mock -CommandName Test-BsnLocalComputer -ModuleName 'Bsn.SystemManagement' { $true }
+        }
+
+        It 'passes -After through to the local suspend action' {
+            Suspend-Computer -After 5 -Force
+            Should -Invoke -CommandName Invoke-BsnLocalSuspend -ModuleName 'Bsn.SystemManagement' -Times 1 -Exactly -Scope It `
+                -ParameterFilter { $After -eq 5 }
+        }
+
+        It 'defaults to an immediate suspension (After = 0)' {
+            Suspend-Computer -Force
+            Should -Invoke -CommandName Invoke-BsnLocalSuspend -ModuleName 'Bsn.SystemManagement' -Times 1 -Exactly -Scope It `
+                -ParameterFilter { $After -eq 0 }
+        }
+
+        It 'mentions the delay in the WhatIf description' {
+            (Get-Command -Name 'Suspend-Computer').Definition | Should -Match 'power state after'
+        }
+
+        It 'rejects negative -After values through parameter validation' {
+            { Suspend-Computer -After -1 -Force -ErrorAction 'Stop' } | Should -Throw
+        }
+
+        It 'binds the remote action script parameters positionally (Hibernate, Force, After)' {
+            # https://github.com/BSVN/Lmt.Commons/issues/17
+            # Invoke-Command -ArgumentList binds positionally to the shipped
+            # script's param block - the order is part of the remoting contract.
+            $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+                (Join-Path -Path $moduleRoot -ChildPath 'scripts/Suspend-Action.ps1'), [ref]$null, [ref]$null)
+            $paramBlock = $scriptAst.ParamBlock
+            $paramNames = @($paramBlock.Parameters.Name.VariablePath.UserPath)
+
+            $paramNames | Should -Be @('Hibernate', 'Force', 'After')
         }
     }
 }

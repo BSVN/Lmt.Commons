@@ -17,6 +17,11 @@
     (WinRM or SSH); the module does not need to be installed on the remote
     computer.
 
+    Use -After to delay the suspension: the countdown runs on the TARGET
+    computer, so a remote machine suspends N seconds after the command
+    reaches it. While the countdown is running, press Ctrl+C to cancel the
+    pending suspension.
+
 .PARAMETER ComputerName
     Specifies the target computers. The default is the local computer.
     Accepts pipeline input. Remote computers require PowerShell remoting
@@ -30,6 +35,12 @@
 .PARAMETER Force
     Suspends without prompting for confirmation and requests a forced
     (critical) suspend so the system does not wait for applications.
+
+.PARAMETER After
+    Suspends the target after the specified number of seconds have elapsed
+    on the TARGET computer (the countdown starts when the command reaches
+    it). The default (0) suspends immediately. While the countdown runs,
+    press Ctrl+C to cancel the pending suspension.
 
 .INPUTS
     System.String
@@ -58,11 +69,26 @@
 
     Suspends two remote computers over PowerShell remoting without a prompt.
 
+.EXAMPLE
+    Suspend-Computer -After 60
+
+    Suspends the local computer after 60 seconds, leaving a minute to save
+    your work.
+
+.EXAMPLE
+    Suspend-Computer -ComputerName MEDIA-01 -After 300 -Confirm:$false
+
+    Suspends the remote computer MEDIA-01 five minutes after the command
+    reaches it.
+
 .NOTES
     Implements the community request tracked in
     https://github.com/PowerShell/PowerShell/issues/28164. The PowerShell
     Cmdlets Working Group recommended this functionality be delivered as a
     community module on the PowerShell Gallery.
+
+    The '-After' delay implements the request tracked in
+    https://github.com/BSVN/Lmt.Commons/issues/17.
 #>
 function Suspend-Computer {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
@@ -73,7 +99,10 @@ function Suspend-Computer {
 
         [switch]$Hibernate,
 
-        [switch]$Force
+        [switch]$Force,
+
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$After = 0
     )
 
     begin {
@@ -93,15 +122,23 @@ function Suspend-Computer {
 
         foreach ($computer in $targetComputers) {
             $powerState = if ($Hibernate.IsPresent) { 'hibernate' } else { 'sleep' }
-            if ($Force.IsPresent -or $PSCmdlet.ShouldProcess($computer, ("Enter the '{0}' power state" -f $powerState))) {
+            $shouldProcessDescription = if ($After -gt 0) {
+                ("Enter the '{0}' power state after {1} seconds" -f $powerState, $After)
+            }
+            else {
+                ("Enter the '{0}' power state" -f $powerState)
+            }
+
+            if ($Force.IsPresent -or $PSCmdlet.ShouldProcess($computer, $shouldProcessDescription)) {
                 try {
                     if (Test-BsnLocalComputer -ComputerName $computer) {
-                        Invoke-BsnLocalSuspend -Hibernate:$Hibernate.IsPresent -Force:$Force.IsPresent
+                        Invoke-BsnLocalSuspend -Hibernate:$Hibernate.IsPresent -Force:$Force.IsPresent -After $After
                     }
                     else {
                         # Ship the self-contained action script to the remote machine;
-                        # the module itself does not need to be installed remotely.
-                        $null = Invoke-Command -ComputerName $computer -FilePath $script:SuspendActionScriptPath -ArgumentList @([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent) -ErrorAction 'Stop'
+                        # the module itself does not need to be installed remotely. The
+                        # countdown runs on the target machine (issue #17).
+                        $null = Invoke-Command -ComputerName $computer -FilePath $script:SuspendActionScriptPath -ArgumentList @([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent, [int]$After) -ErrorAction 'Stop'
                     }
                 }
                 catch {

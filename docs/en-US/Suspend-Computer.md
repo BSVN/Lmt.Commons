@@ -13,7 +13,7 @@ the PowerShell Gallery, which is exactly what `Bsn.SystemManagement` is.
 
 ```powershell
 Suspend-Computer [[-ComputerName] <string[]>] [-Hibernate] [-Force]
-                 [-WhatIf] [-Confirm]
+                 [-After <int>] [-WhatIf] [-Confirm]
 ```
 
 ## Platform support
@@ -32,6 +32,10 @@ Suspend-Computer [[-ComputerName] <string[]>] [-Hibernate] [-Force]
 - **Hibernate** - hibernate (S4) instead of sleep (S3 / Modern Standby).
 - **Force** - skip the confirmation prompt and request a forced
   (critical) suspend.
+- **After** - suspend after the specified number of seconds have elapsed
+  on the target computer (the countdown starts when the command reaches
+  it). The default (0) suspends immediately. While the countdown runs,
+  press Ctrl+C to cancel the pending suspension.
 
 ## Examples
 
@@ -52,6 +56,20 @@ Suspend-Computer -Hibernate -Force
 ```
 
 Hibernates the local computer immediately, without a confirmation prompt.
+
+```powershell
+Suspend-Computer -After 60
+```
+
+Suspends the local computer after 60 seconds, leaving a minute to save your
+work. Press Ctrl+C during the countdown to cancel.
+
+```powershell
+Suspend-Computer -ComputerName MEDIA-01 -After 300 -Confirm:$false
+```
+
+Suspends the remote computer MEDIA-01 five minutes after the command reaches
+it.
 
 ```powershell
 'WORKSTATION-07', 'WORKSTATION-12' | Suspend-Computer -Confirm:$false
