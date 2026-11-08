@@ -1,0 +1,8 @@
+# Codecov receives PowerShell coverage only (JaCoCo-style XML produced by
+# `build.ps1 -Task Test -CodeCoverage` from the Pester run). The C# interop
+# sources have no coverage instrumentation in this repo; they are gated by
+# CodeQL, the .NET build (warnings-as-errors) and PSScriptAnalyzer instead.
+# Excluding them keeps patch/project coverage meaningful instead of counting
+# uninstrumented C# lines as misses.
+ignore:
+  - "src/**/*.cs"
