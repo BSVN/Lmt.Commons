@@ -130,15 +130,20 @@ function Suspend-Computer {
             }
 
             if ($Force.IsPresent -or $PSCmdlet.ShouldProcess($computer, $shouldProcessDescription)) {
+                # Grace period for the '-After' delay (issue #17): the
+                # countdown runs before the dispatch and Ctrl+C during it
+                # cancels the pending suspension. For remote computers the
+                # target suspends as soon as the command reaches it.
+                Wait-BsnSuspendGracePeriod -Seconds $After
+
                 try {
                     if (Test-BsnLocalComputer -ComputerName $computer) {
-                        Invoke-BsnLocalSuspend -Hibernate:$Hibernate.IsPresent -Force:$Force.IsPresent -After $After
+                        Invoke-BsnLocalSuspend -Hibernate:$Hibernate.IsPresent -Force:$Force.IsPresent
                     }
                     else {
                         # Ship the self-contained action script to the remote machine;
-                        # the module itself does not need to be installed remotely. The
-                        # countdown runs on the target machine (issue #17).
-                        $null = Invoke-Command -ComputerName $computer -FilePath $script:SuspendActionScriptPath -ArgumentList @([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent, [int]$After) -ErrorAction 'Stop'
+                        # the module itself does not need to be installed remotely.
+                        $null = Invoke-Command -ComputerName $computer -FilePath $script:SuspendActionScriptPath -ArgumentList @([bool]$Hibernate.IsPresent, [bool]$Force.IsPresent) -ErrorAction 'Stop'
                     }
                 }
                 catch {
