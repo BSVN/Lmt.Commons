@@ -32,24 +32,16 @@ Describe 'TerminalQueryFilter' {
 
         It 'drops DSR cursor-position report requests' {
             $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[6n") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[?6n") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[0n") | Should -Be ([string]::Empty)
+            foreach ($body in @('6n', '?6n', '0n')) {
+                $filter.Filter("$($script:Esc)[$body") | Should -Be ([string]::Empty)
+            }
         }
 
         It 'drops device-attribute (DA) capability queries' {
             $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[c") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[0c") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[>c") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[>85;100c") | Should -Be ([string]::Empty)
-            $filter = [Bsn.Host.Interop.TerminalQueryFilter]::new()
-            $filter.Filter("$($script:Esc)[=67;84;1c") | Should -Be ([string]::Empty)
+            foreach ($body in @('c', '0c', '>c', '>85;100c', '=67;84;1c')) {
+                $filter.Filter("$($script:Esc)[$body") | Should -Be ([string]::Empty)
+            }
         }
 
         It 'drops the XTVERSION query' {
