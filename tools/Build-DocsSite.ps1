@@ -341,6 +341,12 @@ try {
     finally {
         Pop-Location
     }
+
+    # Source maps are dev-only, roughly double the deployment size, and
+    # make the GitHub Pages deployment of the full multi-version site time
+    # out. Nothing on a docs site consumes them; drop them.
+    Get-ChildItem -Path $absoluteOutput -Recurse -File -Filter '*.map' |
+        Remove-Item -Force
 }
 finally {
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction 'SilentlyContinue'
