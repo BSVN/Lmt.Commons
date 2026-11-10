@@ -1,0 +1,76 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docfx.json'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/Docs.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'docfx.json'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/Docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build documentation site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # docfx is pinned in .config/dotnet-tools.json. There is no
+      # Dependabot ecosystem for dotnet-tools manifests, so version bumps
+      # are manual - same policy as the PowerShell build dependencies.
+      - name: Restore the pinned docfx tool
+        run: dotnet tool restore
+
+      # docfx.json sets warningsAsErrors: a broken link or a page missing
+      # from docs/toc.yml fails this step.
+      - name: Build the documentation site
+        run: dotnet docfx docfx.json
+
+      - name: Upload the site artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      # Self-enables Pages with the "GitHub Actions" build source on the
+      # first run (no-op afterwards). continue-on-error keeps the deploy
+      # working when the call is redundant or the token lacks permission
+      # because Pages was configured manually in the repository settings.
+      - name: Enable GitHub Pages for the workflow source
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Deploy the site
+        id: deployment
+        uses: actions/deploy-pages@v4
