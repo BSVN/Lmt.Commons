@@ -24,6 +24,13 @@ Describe 'Bsn.Host manifest' {
         ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
     }
 
+    It 'exposes the online-help HelpUri for every public function' {
+        foreach ($command in (Get-Command -Module 'Bsn.Host')) {
+            $expectedUri = 'https://bsvn.github.io/Lmt.Commons/en-US/' + $command.Name + '.html'
+            $command.HelpUri | Should -Be $expectedUri
+        }
+    }
+
     It 'stamps the interop assembly with the manifest version (issue #15)' {
         # With the default AssemblyVersion 1.0.0.0 in every release the loader
         # could not tell versions apart: Import-Module -Force after

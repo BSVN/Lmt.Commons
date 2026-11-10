@@ -147,6 +147,9 @@ using module Bsn.Common
     Implements https://github.com/PowerShell/PowerShell/issues/28353
     following the parameter and format semantics of PowerShell-RFC#421 at
     module scope.
+
+.LINK
+    https://bsvn.github.io/Lmt.Commons/en-US/Start-InteractiveTranscript.html
 #>
 function Start-InteractiveTranscript {
     [CmdletBinding(SupportsShouldProcess = $true)]

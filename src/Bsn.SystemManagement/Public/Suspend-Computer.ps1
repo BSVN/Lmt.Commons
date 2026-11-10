@@ -89,6 +89,9 @@
 
     The '-After' delay implements the request tracked in
     https://github.com/BSVN/Lmt.Commons/issues/17.
+
+.LINK
+    https://bsvn.github.io/Lmt.Commons/en-US/Suspend-Computer.html
 #>
 function Suspend-Computer {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]

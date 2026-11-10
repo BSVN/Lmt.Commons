@@ -87,6 +87,11 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   home. `Start-InteractiveTranscript.md` is retitled from the old
   module-overview heading to the cmdlet name.
   [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- `Get-Help <cmdlet> -Online` now opens the cmdlet's page on the online
+  help site: every public cmdlet carries a HelpUri derived from its
+  comment-based help (`.LINK` section), and guard tests in each module
+  keep the HelpUris in sync with the site URLs.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
 
 ## [Bsn.Host 0.2.3] - 2026-11-07
 
