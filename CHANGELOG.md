@@ -71,6 +71,22 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   script(1) engine on every pull request.
 - Show-InteractiveTranscript follows the same restore discipline for
   playback writes (from 0.2.3) - unchanged here.
+- An online help site for the whole `Bsn.*` family at
+  https://bsvn.github.io/Lmt.Commons/ (issue #29): the
+  `docs/en-US/*.md` artifacts are built with DocFX (pinned in
+  `.config/dotnet-tools.json`, warnings-as-errors gate) into a
+  searchable site and deployed to GitHub Pages by the new `Docs`
+  workflow on pushes to `main`; pull requests touching `docs/` run the
+  same build gate.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- Completed the per-cmdlet online-help artifacts:
+  `docs/en-US/Show-InteractiveTranscript.md`,
+  `docs/en-US/Stop-InteractiveTranscript.md` and
+  `docs/en-US/Get-BsnOperatingSystem.md` (every exported cmdlet is now
+  covered), plus per-module `about_Bsn.*.md` web pages and the site
+  home. `Start-InteractiveTranscript.md` is retitled from the old
+  module-overview heading to the cmdlet name.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
 
 ## [Bsn.Host 0.2.3] - 2026-11-07
 

@@ -58,7 +58,9 @@ windows/ubuntu/macos, CodeQL, SonarCloud quality gate):
   suspend-path tests are mocked.
 - **Every public cmdlet ships three doc artifacts**, updated together:
   comment-based help in the function, `en-US/about_*.help.txt`, and
-  `docs/en-US/<Cmdlet>.md`.
+  `docs/en-US/<Cmdlet>.md`. The Markdown pages feed the online help site
+  (https://bsvn.github.io/Lmt.Commons/, built by DocFX), so each page
+  must also be registered in `docs/toc.yml`.
 - **Naming**: private helpers follow `<ApprovedVerb>-Bsn<Noun>`.
 - C# interop code lives in real .NET projects per module; keep it
   warning-free for netstandard2.0. New testable C# goes in its own covered
