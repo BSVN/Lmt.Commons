@@ -10,8 +10,10 @@ repo, many independently-versioned modules, azure-powershell style.
 The pages here are the same Markdown artifacts that ship inside each
 module as PowerShell help: running `Get-Help <cmdlet>` locally shows the
 same content. This site just makes it browsable without installing
-anything. Docs track the repository `main` branch, so they can describe
-changes that are not yet on the gallery.
+anything. The site hosts one documentation set per release tag plus
+`main` - use the version links in the page footer to switch. Docs on
+`main` can describe changes that are not yet on the gallery; the site
+root always serves the latest release.
 
 ## Modules
 

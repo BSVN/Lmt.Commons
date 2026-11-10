@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/**'
+      - 'tools/**'
       - 'docfx.json'
       - '.config/dotnet-tools.json'
       - '.github/workflows/Docs.yml'
@@ -11,9 +12,12 @@ on:
     branches: [ main ]
     paths:
       - 'docs/**'
+      - 'tools/**'
       - 'docfx.json'
       - '.config/dotnet-tools.json'
       - '.github/workflows/Docs.yml'
+  release:
+    types: [ published ]
   workflow_dispatch:
 
 permissions:
@@ -28,8 +32,15 @@ jobs:
     name: Build documentation site
     runs-on: ubuntu-latest
     steps:
+      # Full history so every release tag's docs/en-US content can be
+      # extracted. Release events check out main: the release trigger
+      # itself checks out the tag, but all version builds (including
+      # main's) read their Markdown through git from the configured refs.
       - name: Check out the repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
 
       # docfx is pinned in .config/dotnet-tools.json. There is no
       # Dependabot ecosystem for dotnet-tools manifests, so version bumps
@@ -38,19 +49,23 @@ jobs:
         run: dotnet tool restore
 
       # docfx.json sets warningsAsErrors: a broken link or a page missing
-      # from docs/toc.yml fails this step.
+      # from docs/toc.yml fails this step. Pull requests only rebuild the
+      # main set (the gate); pushes to main and releases build every
+      # version - main, the latest release at the site root, and one set
+      # per release tag.
       - name: Build the documentation site
-        run: dotnet docfx docfx.json
+        shell: pwsh
+        run: ./tools/Build-AllDocs.ps1 -SiteOutputDir site -MainOnly:($env:GITHUB_EVENT_NAME -eq 'pull_request')
 
       - name: Upload the site artifact
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: out/site
+          path: site
 
   deploy:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
