@@ -17,9 +17,8 @@ Describe 'Bsn.SystemManagement manifest' {
     }
 
     It 'exposes the online-help HelpUri for every public function' {
-        foreach ($command in (Get-Command -Module 'Bsn.SystemManagement')) {
-            $expectedUri = 'https://bsvn.github.io/Lmt.Commons/en-US/' + $command.Name + '.html'
-            $command.HelpUri | Should -Be $expectedUri
+        Get-Command -Module 'Bsn.SystemManagement' | ForEach-Object {
+            $_.HelpUri | Should -Be ('https://bsvn.github.io/Lmt.Commons/en-US/' + $_.Name + '.html')
         }
     }
 

@@ -25,9 +25,9 @@ Describe 'Bsn.Host manifest' {
     }
 
     It 'exposes the online-help HelpUri for every public function' {
-        foreach ($command in (Get-Command -Module 'Bsn.Host')) {
-            $expectedUri = 'https://bsvn.github.io/Lmt.Commons/en-US/' + $command.Name + '.html'
-            $command.HelpUri | Should -Be $expectedUri
+        foreach ($recordedCommand in (Get-Command -Module 'Bsn.Host')) {
+            $onlineUri = 'https://bsvn.github.io/Lmt.Commons/en-US/{0}.html' -f $recordedCommand.Name
+            $recordedCommand.HelpUri | Should -Be $onlineUri
         }
     }
 
