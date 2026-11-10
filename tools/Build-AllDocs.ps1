@@ -76,3 +76,18 @@ foreach ($tag in ($tagList | Where-Object { $_ -ne $stableTag })) {
         -RepoRoot $RepoRoot -SiteBasePath $SiteBasePath `
         -CurrentLabel $tag -FooterLinks $footerLinks
 }
+
+# Canonical version list for the header switcher (and any future consumer).
+$versionEntries = @(
+    [pscustomobject]@{ label = 'main'; url = ($SiteBasePath + '/main/') }
+)
+if ($stableTag) {
+    $versionEntries += [pscustomobject]@{ label = ($stableTag + ' (stable)'); url = ($SiteBasePath + '/') }
+    foreach ($tag in ($tagList | Where-Object { $_ -ne $stableTag })) {
+        $versionEntries += [pscustomobject]@{ label = $tag; url = ($SiteBasePath + '/' + $tag + '/') }
+    }
+}
+
+[System.IO.File]::WriteAllText(
+    (Join-Path -Path $siteRoot -ChildPath 'versions.json'),
+    (ConvertTo-Json -InputObject $versionEntries -Compress))

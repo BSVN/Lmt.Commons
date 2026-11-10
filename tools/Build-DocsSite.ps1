@@ -259,6 +259,65 @@ try {
 
     $footerHtml = 'Docs versions: ' + ($footerParts -join ' &middot; ')
 
+    # learn.microsoft.com-style version switcher: a small script injects a
+    # Bootstrap select into the modern template's navbar. When the same
+    # page exists under the target version's path it is opened directly;
+    # otherwise the target version's home is shown. The plain-text strip
+    # above remains as the no-JavaScript fallback.
+    $versionEntries = foreach ($entry in $FooterLinks) {
+        $separatorIndex = $entry.IndexOf('|')
+        $label = $entry.Substring(0, $separatorIndex)
+        [pscustomobject]@{
+            label = $label
+            url = $entry.Substring($separatorIndex + 1)
+            current = ($label -eq $CurrentLabel)
+        }
+    }
+
+    $versionsJson = ConvertTo-Json -InputObject @($versionEntries) -Compress
+    $switcherScript = @'
+<script>
+(function () {
+  var versions = __VERSIONS_JSON__;
+  var inject = function () {
+    var navbar = document.getElementById('navbar');
+    if (!navbar) { return; }
+    var current = null;
+    for (var i = 0; i < versions.length; i++) {
+      if (versions[i].current) { current = versions[i]; }
+    }
+    var tail = '';
+    if (current && window.location.pathname.indexOf(current.url) === 0) {
+      tail = window.location.pathname.substring(current.url.length);
+    }
+    var select = document.createElement('select');
+    select.className = 'form-select';
+    select.setAttribute('aria-label', 'Documentation version');
+    select.style.maxWidth = '14rem';
+    select.style.marginInlineEnd = '0.5rem';
+    versions.forEach(function (entry) {
+      var option = document.createElement('option');
+      option.value = entry.url + tail;
+      option.textContent = entry.label;
+      if (entry.current) { option.selected = true; }
+      select.appendChild(option);
+    });
+    select.addEventListener('change', function () {
+      window.location.href = select.value;
+    });
+    navbar.insertBefore(select, navbar.querySelector('form') || navbar.firstChild);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', inject);
+  } else {
+    inject();
+  }
+})();
+</script>
+'@
+
+    $footerHtml = $switcherScript.Replace('__VERSIONS_JSON__', $versionsJson) + "`n" + $footerHtml
+
     $config = Get-Content -Raw -Path (Join-Path -Path $RepoRoot -ChildPath 'docfx.json') | ConvertFrom-Json
     $config.build.output = $absoluteOutput
     $config.build.globalMetadata._appFooter = $footerHtml
