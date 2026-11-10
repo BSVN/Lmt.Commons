@@ -295,6 +295,16 @@ Describe 'ConvertTo-BsnTranscript' {
                 -BodyLines @('')
             $result | Should -BeExactly $expected
         }
+
+        It 'tolerates a cast header without a timestamp (epoch start)' {
+            $noTimestampPath = Join-Path -Path $TestDrive -ChildPath 'no-timestamp.cast'
+            Set-Content -LiteralPath $noTimestampPath -Value '{"version": 2, "width": 80, "height": 24}' -NoNewline
+
+            $result = ConvertTo-BsnTranscript -Path $noTimestampPath
+            $expectedEpochText = $script:EpochStart.ToLocalTime().ToString('yyyyMMddHHmmss')
+            $result | Should -BeLike ('*Start time: ' + $expectedEpochText + '*')
+            $result | Should -BeLike ('*End time: ' + $expectedEpochText + '*')
+        }
     }
 
     Context 'file output' {
@@ -319,12 +329,23 @@ Describe 'ConvertTo-BsnTranscript' {
             $content | Should -BeExactly ($expected + "`r`n")
         }
 
-        It 'honors -Encoding (UTF-16LE with BOM, ASCII with replacement)' {
+        It 'honors -Encoding (BOMs per encoding, ASCII replacement)' {
             $unicodePath = Join-Path -Path $TestDrive -ChildPath 'unicode.txt'
             ConvertTo-BsnTranscript -Path $script:BoxRuleCastPath -OutPath $unicodePath -Encoding Unicode
             $unicodeBytes = [System.IO.File]::ReadAllBytes($unicodePath)
             $unicodeBytes[0] | Should -Be 0xFF
             $unicodeBytes[1] | Should -Be 0xFE
+
+            $bigEndianPath = Join-Path -Path $TestDrive -ChildPath 'bigendian.txt'
+            ConvertTo-BsnTranscript -Path $script:BoxRuleCastPath -OutPath $bigEndianPath -Encoding BigEndianUnicode
+            $bigEndianBytes = [System.IO.File]::ReadAllBytes($bigEndianPath)
+            $bigEndianBytes[0] | Should -Be 0xFE
+            $bigEndianBytes[1] | Should -Be 0xFF
+
+            $utf32Path = Join-Path -Path $TestDrive -ChildPath 'utf32.txt'
+            ConvertTo-BsnTranscript -Path $script:BoxRuleCastPath -OutPath $utf32Path -Encoding UTF32
+            $utf32Bytes = [System.IO.File]::ReadAllBytes($utf32Path)
+            ($utf32Bytes[0..3] | ForEach-Object { $_.ToString('X2') }) -join ' ' | Should -Be 'FF FE 00 00'
 
             $asciiPath = Join-Path -Path $TestDrive -ChildPath 'ascii.txt'
             ConvertTo-BsnTranscript -Path $script:BoxRuleCastPath -OutPath $asciiPath -Encoding ASCII
@@ -413,6 +434,18 @@ Describe 'ConvertTo-BsnTranscript' {
         It 'ignores input events by default' {
             $result = ConvertTo-BsnTranscript -Path $script:AnnotatedCastPath
             $result.Contains('s3cr3t') | Should -BeFalse
+        }
+
+        It 'flushes a trailing typed-input annotation at the end of the session' {
+            $trailingInputPath = Join-Path -Path $TestDrive -ChildPath 'trailing-input.cast'
+            Set-Content -LiteralPath $trailingInputPath -Value @'
+{"version": 2, "width": 80, "height": 24, "timestamp": 1793895000, "env": {"SHELL": "bash", "TERM": "xterm"}}
+[0, "o", "Password: "]
+[0.2, "i", "s3cr3t\r"]
+'@ -NoNewline
+
+            $result = ConvertTo-BsnTranscript -Path $trailingInputPath -AnnotateCommands
+            $result.Contains('Password: > s3cr3t') | Should -BeTrue
         }
 
         It 'strips escape sequences from annotated input' {

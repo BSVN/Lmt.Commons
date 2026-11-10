@@ -228,11 +228,10 @@ function ConvertTo-BsnTranscript {
             throw ('-OutPath converts a single cast file, but the pipeline supplied another one. Drop -OutPath to emit every transcript on the pipeline instead.')
         }
 
-        # -RenderMode reserves the API surface: Strip is the only implemented
-        # rendering tier; a full VT emulation tier may follow for TUI casts.
-        if ($RenderMode -ne 'Strip') {
-            throw ("Render mode '{0}' is not implemented; use 'Strip'." -f $RenderMode)
-        }
+        # -RenderMode reserves the API surface: 'Strip' is the only implemented
+        # rendering tier (a full VT emulation tier may follow for TUI casts);
+        # the ValidateSet already restricts the value to 'Strip'.
+        Write-Verbose -Message ('Rendering with render mode: {0}' -f $RenderMode)
 
         # Same pure parser every cast consumer shares - no re-parsing here.
         $timeline = Get-BsnCastTimeline -Path $Path
