@@ -13,6 +13,13 @@ Describe 'Bsn.Common manifest' {
         $manifest = Test-ModuleManifest -Path $script:ManifestPath
         ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Get-BsnOperatingSystem'
     }
+
+    It 'exposes the online-help HelpUri for every public function' {
+        foreach ($command in (Get-Command -Module 'Bsn.Common')) {
+            $expectedUri = 'https://bsvn.github.io/Lmt.Commons/en-US/' + $command.Name + '.html'
+            $command.HelpUri | Should -Be $expectedUri
+        }
+    }
 }
 
 Describe 'Get-BsnOperatingSystem' {

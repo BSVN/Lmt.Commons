@@ -34,6 +34,9 @@ enum BsnOperatingSystem {
 .OUTPUTS
     BsnOperatingSystem
         One of Windows, Linux, macOS or Unknown.
+
+.LINK
+    https://bsvn.github.io/Lmt.Commons/en-US/Get-BsnOperatingSystem.html
 #>
 function Get-BsnOperatingSystem {
     [CmdletBinding()]
