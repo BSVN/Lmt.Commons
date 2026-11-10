@@ -183,7 +183,20 @@ before:
   small inline P/Invoke copy of SetSuspendState is the one justified
   exception to the no-embedded-C# rule. Locally, Windows suspend calls the
   compiled `Bsn.SystemManagement.Interop.PowerProf` assembly instead.
-- Private helper naming: `<ApprovedVerb>-Bsn<Noun>` (e.g. `Get-BsnOperatingSystem`).
+- Naming: private helpers are `<ApprovedVerb>-Bsn<Noun>` (e.g.
+  `Get-BsnOperatingSystem`). Public cmdlet nouns follow the same
+  collision-avoidance rule: when the bare noun sits in a namespace
+  Microsoft or other vendors plausibly own (`Transcript` next to
+  `Start-Transcript`, `Computer` next to `Stop-Computer`), prefix it
+  with `Bsn` (`ConvertTo-BsnTranscript`, never `ConvertTo-Transcript`);
+  bare nouns are fine only when already distinctive
+  (`Start-InteractiveTranscript`). Rationale: command-name collisions
+  resolve silently (the last-imported module wins), and module
+  auto-loading bypasses `Import-Module -Prefix`, so unique nouns are a
+  producer-side guarantee - the same reason the ecosystem ships
+  `Get-AzVM` / `Get-ADUser` instead of relying on per-import prefixes.
+  Existing published names are grandfathered (`Suspend-Computer`
+  predates this rule); it binds every new cmdlet.
 - Every public cmdlet ships three doc artifacts: comment-based help in the
   function (source of truth, renders via Get-Help), `en-US/about_*.help.txt`,
   and `docs/en-US/<Cmdlet>.md`. Update all three together.
