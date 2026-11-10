@@ -47,6 +47,28 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `ConvertTo-BsnTranscript`: converts an asciicast (.cast) recording
+  into a Start-Transcript-style plain-text transcript - the readable,
+  auditor-facing rendering of the recorded evidence (issue #22). The
+  conversion is pure (built on the shared `Get-BsnCastTimeline` parser,
+  no console replay): output ('o') events are concatenated in timeline
+  order, CSI/OSC/VT escape sequences are stripped and carriage-return
+  overtype/backspace are resolved (progress bars collapse to their final
+  frame), so line-oriented shell sessions produce clean text with the
+  echoed commands naturally in place. Full-screen TUI redraws remain
+  columnar residue - documented limitation; the cast stays the exact
+  evidence. `-HeaderMode Standard` (default) mimics the
+  Start-Transcript frame (unknown engine fields blank unless supplied
+  via parameters; Host Application derived from the cast header);
+  `-HeaderMode Bsn` adds the audit frame: deterministic session id,
+  recorded-by version, terminal size, cast file path and the SHA-256 of
+  the cast the text was rendered from (plus the exit code for v3
+  casts). `-AnnotateCommands` inserts recorded input ('i') events as
+  typed-command lines for sessions where echo was absent. Output
+  standardizes on UTF-8 without BOM with CRLF line endings on both
+  PowerShell editions (`-Encoding` switches it); `-OutPath` writes the
+  file, the pipeline emits the transcript text.
+  [#22](https://github.com/BSVN/Lmt.Commons/issues/22)
 - `Suspend-Computer -After <seconds>`: suspends the target after a delay
   counted on the target computer (default 0 = immediate). Works locally
   and over PowerShell remoting without installing the module remotely;

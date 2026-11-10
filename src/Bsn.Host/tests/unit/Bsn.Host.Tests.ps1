@@ -21,7 +21,7 @@ Describe 'Bsn.Host manifest' {
 
     It 'exports exactly the intended public functions' {
         $manifest = Test-ModuleManifest -Path $script:ManifestPath
-        ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
+        ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'ConvertTo-BsnTranscript,Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
     }
 
     It 'stamps the interop assembly with the manifest version (issue #15)' {
@@ -37,7 +37,7 @@ Describe 'Bsn.Host manifest' {
 
 Describe 'Bsn.Host module' {
     It 'loads and exposes its public commands' {
-        foreach ($commandName in @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript')) {
+        foreach ($commandName in @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript', 'ConvertTo-BsnTranscript')) {
             Get-Command -Name $commandName -Module 'Bsn.Host' -ErrorAction 'SilentlyContinue' | Should -Not -BeNullOrEmpty
         }
     }
