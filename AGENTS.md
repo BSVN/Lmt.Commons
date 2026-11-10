@@ -202,7 +202,14 @@ before:
   PRs touching `docs/`, `docfx.json` or the workflow run the same build
   (warnings as errors). DocFX is pinned in `.config/dotnet-tools.json`
   (restore with `dotnet tool restore`, run with `dotnet docfx docfx.json`).
-  Every Markdown page must be reachable from `docs/toc.yml`.
+  Every Markdown page must be reachable from `docs/toc.yml`. The site is
+  versioned: the root serves the latest release tag (the `/en-US/`
+  HelpUri targets - keep that path stable), `/main/` the development
+  docs, and `/vX.Y.Z/` one set per release, added automatically when a
+  release is published. Builds run through `tools/Build-AllDocs.ps1`
+  (orchestration) and `tools/Build-DocsSite.ps1` (single version); the
+  navigation template is pruned to the pages that exist at each ref, so
+  old tags build cleanly without their own tooling.
 - CodeQL (`.github/workflows/CodeQL.yml`) analyzes the C# interop code
   (manual build mode: the repo has no .sln, so the workflow builds each
   csproj explicitly) on pushes/PRs to main plus a weekly schedule.

@@ -92,6 +92,19 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   comment-based help (`.LINK` section), and guard tests in each module
   keep the HelpUris in sync with the site URLs.
   [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- Versioned documentation: the site hosts one docs set per release tag
+  plus `main`. The site root always serves the latest release (so the
+  `/en-US/<Cmdlet>.html` HelpUri targets stay stable and version-correct
+  for released modules), `/main/` serves the development docs, and
+  `/vX.Y.Z/` serves one set per release - added automatically when a
+  release is published. A learn.microsoft.com-style version switcher in
+  the page header (with a plain-text fallback in the footer) lets readers
+  jump between `main` and releases, landing on the same page when it
+  exists in the target version; the canonical version list is published
+  as `versions.json` at the site root. Builds are orchestrated by
+  `tools/Build-AllDocs.ps1`/`tools/Build-DocsSite.ps1`; pull requests
+  still gate only the `main` set.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
 
 ## [Bsn.Host 0.2.3] - 2026-11-07
 
