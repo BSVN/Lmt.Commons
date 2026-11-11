@@ -8,6 +8,13 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The versioned docs deployment no longer times out: DocFX source maps
+  (~138 MB of the ~211 MB site) are now stripped from the build output
+  (the site drops to ~73 MB), and the GitHub Pages deploy step's polling
+  window is raised to 30 minutes to absorb the slower backend processing
+  of a multi-version site.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+
 - Playback of TUI recordings no longer leaves garbage like
   `[4;600;1200t` typed at the prompt (issue #20). Root cause: recorded
   TUI applications query the terminal they are attached to - XTWINOPS

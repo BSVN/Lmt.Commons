@@ -89,3 +89,8 @@ jobs:
       - name: Deploy the site
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # The multi-version site is tens of megabytes; the backend
+          # deployment regularly exceeds the action's default 10-minute
+          # polling window ("Timeout reached, aborting!").
+          timeout: 1800000
