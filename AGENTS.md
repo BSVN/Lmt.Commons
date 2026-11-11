@@ -199,13 +199,30 @@ before:
   predates this rule); it binds every new cmdlet.
 - Every public cmdlet ships three doc artifacts: comment-based help in the
   function (source of truth, renders via Get-Help), `en-US/about_*.help.txt`,
-  and `docs/en-US/<Cmdlet>.md`. Update all three together.
+  and `docs/en-US/<Cmdlet>.md`. Update all three together. The
+  `docs/en-US/*.md` pages also power the online help site
+  (https://bsvn.github.io/Lmt.Commons/, built with DocFX): register every
+  new page in `docs/toc.yml`, keep the Markdown ASCII-only, and note that
+  the Docs workflow build fails on broken links or TOC errors.
 
 ## CI / publishing
 
 - CI (`.github/workflows/CI.yml`) runs Analyze+Test on windows/ubuntu/macos
   for every push/PR. Never make tests that actually suspend/sleep a machine —
   all suspend-path tests are mocked.
+- Docs (`.github/workflows/Docs.yml`): builds the online help site from
+  `docs/` with DocFX and deploys it to GitHub Pages on pushes to main;
+  PRs touching `docs/`, `docfx.json` or the workflow run the same build
+  (warnings as errors). DocFX is pinned in `.config/dotnet-tools.json`
+  (restore with `dotnet tool restore`, run with `dotnet docfx docfx.json`).
+  Every Markdown page must be reachable from `docs/toc.yml`. The site is
+  versioned: the root serves the latest release tag (the `/en-US/`
+  HelpUri targets - keep that path stable), `/main/` the development
+  docs, and `/vX.Y.Z/` one set per release, added automatically when a
+  release is published. Builds run through `tools/Build-AllDocs.ps1`
+  (orchestration) and `tools/Build-DocsSite.ps1` (single version); the
+  navigation template is pruned to the pages that exist at each ref, so
+  old tags build cleanly without their own tooling.
 - CodeQL (`.github/workflows/CodeQL.yml`) analyzes the C# interop code
   (manual build mode: the repo has no .sln, so the workflow builds each
   csproj explicitly) on pushes/PRs to main plus a weekly schedule.
@@ -252,7 +269,9 @@ before:
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
   `ci`); dormant nuget entries per csproj for future PackageReferences.
   PowerShell module deps (Pester etc.) have no Dependabot ecosystem -
-  MinimumVersion gates in the bootstrap are the manual mechanism. The
+  MinimumVersion gates in the bootstrap are the manual mechanism, and the
+  same applies to the DocFX tool pinned in `.config/dotnet-tools.json`
+  (bump manually). The
   `dependencies` and `ci` labels must exist in the repo or Dependabot
   errors when opening PRs.
 - Publishing (`.github/workflows/Publish.yml`) triggers on a **published

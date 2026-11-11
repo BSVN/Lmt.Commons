@@ -8,6 +8,13 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The versioned docs deployment no longer times out: DocFX source maps
+  (~138 MB of the ~211 MB site) are now stripped from the build output
+  (the site drops to ~73 MB), and the GitHub Pages deploy step's polling
+  window is raised to 30 minutes to absorb the slower backend processing
+  of a multi-version site.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+
 - Playback of TUI recordings no longer leaves garbage like
   `[4;600;1200t` typed at the prompt (issue #20). Root cause: recorded
   TUI applications query the terminal they are attached to - XTWINOPS
@@ -71,6 +78,40 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   script(1) engine on every pull request.
 - Show-InteractiveTranscript follows the same restore discipline for
   playback writes (from 0.2.3) - unchanged here.
+- An online help site for the whole `Bsn.*` family at
+  https://bsvn.github.io/Lmt.Commons/ (issue #29): the
+  `docs/en-US/*.md` artifacts are built with DocFX (pinned in
+  `.config/dotnet-tools.json`, warnings-as-errors gate) into a
+  searchable site and deployed to GitHub Pages by the new `Docs`
+  workflow on pushes to `main`; pull requests touching `docs/` run the
+  same build gate.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- Completed the per-cmdlet online-help artifacts:
+  `docs/en-US/Show-InteractiveTranscript.md`,
+  `docs/en-US/Stop-InteractiveTranscript.md` and
+  `docs/en-US/Get-BsnOperatingSystem.md` (every exported cmdlet is now
+  covered), plus per-module `about_Bsn.*.md` web pages and the site
+  home. `Start-InteractiveTranscript.md` is retitled from the old
+  module-overview heading to the cmdlet name.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- `Get-Help <cmdlet> -Online` now opens the cmdlet's page on the online
+  help site: every public cmdlet carries a HelpUri derived from its
+  comment-based help (`.LINK` section), and guard tests in each module
+  keep the HelpUris in sync with the site URLs.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+- Versioned documentation: the site hosts one docs set per release tag
+  plus `main`. The site root always serves the latest release (so the
+  `/en-US/<Cmdlet>.html` HelpUri targets stay stable and version-correct
+  for released modules), `/main/` serves the development docs, and
+  `/vX.Y.Z/` serves one set per release - added automatically when a
+  release is published. A learn.microsoft.com-style version switcher in
+  the page header (with a plain-text fallback in the footer) lets readers
+  jump between `main` and releases, landing on the same page when it
+  exists in the target version; the canonical version list is published
+  as `versions.json` at the site root. Builds are orchestrated by
+  `tools/Build-AllDocs.ps1`/`tools/Build-DocsSite.ps1`; pull requests
+  still gate only the `main` set.
+  [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
 
 ## [Bsn.Host 0.2.3] - 2026-11-07
 

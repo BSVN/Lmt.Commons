@@ -16,6 +16,12 @@ Describe 'Bsn.SystemManagement manifest' {
         ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'Suspend-Computer'
     }
 
+    It 'exposes the online-help HelpUri for every public function' {
+        Get-Command -Module 'Bsn.SystemManagement' | ForEach-Object {
+            $_.HelpUri | Should -Be ('https://bsvn.github.io/Lmt.Commons/en-US/' + $_.Name + '.html')
+        }
+    }
+
     It 'stamps the interop assembly with the manifest version (issue #15)' {
         # Same guard as Bsn.Host (issue #15): the DLL's AssemblyVersion must
         # follow the manifest, otherwise the loader's version checks cannot

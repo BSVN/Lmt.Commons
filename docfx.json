@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "build": {
+    "content": [
+      {
+        "src": "docs",
+        "files": [ "**/*.md", "**/toc.yml" ]
+      }
+    ],
+    "output": "out/site",
+    "template": [ "default", "modern" ],
+    "globalMetadata": {
+      "_appTitle": "Bsn PowerShell modules",
+      "_appFooter": "Bsn.* module family - GPL-3.0 - <a href=\"https://github.com/BSVN/Lmt.Commons\" target=\"_blank\" rel=\"noopener\">BSVN/Lmt.Commons</a>",
+      "_enableSearch": true,
+      "_gitContribute": {
+        "repo": "https://github.com/BSVN/Lmt.Commons",
+        "branch": "main",
+        "apiSpecFolder": "docs"
+      }
+    },
+    "postProcessors": [ "ExtractSearchIndex" ],
+    "warningsAsErrors": true
+  }
+}
