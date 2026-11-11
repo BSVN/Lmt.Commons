@@ -61,7 +61,15 @@ windows/ubuntu/macos, CodeQL, SonarCloud quality gate):
   `docs/en-US/<Cmdlet>.md`. The Markdown pages feed the online help site
   (https://bsvn.github.io/Lmt.Commons/, built by DocFX), so each page
   must also be registered in `docs/toc.yml`.
-- **Naming**: private helpers follow `<ApprovedVerb>-Bsn<Noun>`.
+- **Naming**: private helpers follow `<ApprovedVerb>-Bsn<Noun>`. Public
+  cmdlet nouns must be collision-safe: prefix the noun with `Bsn` when
+  the bare noun sits in a namespace Microsoft or other vendors plausibly
+  own (`Transcript`, `Computer`, ...), e.g. `ConvertTo-BsnTranscript`,
+  not `ConvertTo-Transcript`; bare nouns are fine only when already
+  distinctive (`Start-InteractiveTranscript`). Command-name collisions
+  resolve silently (last import wins) and module auto-loading bypasses
+  `Import-Module -Prefix`, so uniqueness is a publish-time guarantee,
+  not a per-import opt-in. Existing published names are grandfathered.
 - C# interop code lives in real .NET projects per module; keep it
   warning-free for netstandard2.0. New testable C# goes in its own covered
   file under `src/Bsn.Host/tests/csharp`.
