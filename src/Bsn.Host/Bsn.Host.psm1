@@ -19,6 +19,23 @@ enum BsnRecordingFormat {
     Mp4
 }
 
+enum BsnTranscriptHeaderMode {
+    Standard
+    Bsn
+}
+
+enum BsnTranscriptRenderMode {
+    Strip
+}
+
+enum BsnTranscriptEncoding {
+    UTF8
+    ASCII
+    Unicode
+    BigEndianUnicode
+    UTF32
+}
+
 $script:ModuleRoot = $PSScriptRoot
 
 if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {
