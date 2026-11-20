@@ -9,3 +9,10 @@
 ignore:
   - "src/Bsn.Host/src/PtyRecorder.cs"
   - "src/Bsn.SystemManagement/src/PowerProf.cs"
+  # PowerShell network transports of the audit export (issue #21): thin
+  # socket/HTTP wrappers that are mocked at their seam in the Pester suite
+  # (no network in CI), per the issue's "transports are thin and mocked;
+  # only the pure layers get logic tests" rule. Gated by PSScriptAnalyzer
+  # and CI instead; the pure wire-format builders around them ARE measured.
+  - "src/Bsn.Host/Private/Send-BsnAuditSyslog.ps1"
+  - "src/Bsn.Host/Private/Send-BsnSplunkHec.ps1"

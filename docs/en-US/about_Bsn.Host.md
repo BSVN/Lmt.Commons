@@ -49,6 +49,29 @@ during playback and restored afterwards, so characters outside CP437
 (heavy box-drawing borders) do not degrade to `?` on OEM-codepage
 consoles or in Windows PowerShell 5.1 hosts.
 
+## Text transcripts
+
+[ConvertTo-BsnTranscript](ConvertTo-BsnTranscript.md) renders a
+recording as a Start-Transcript-style plain-text transcript - the
+readable, auditor-facing artifact. `-HeaderMode Bsn` frames it with the
+audit block: deterministic session id, recorded-by version, terminal
+size, cast file path and the SHA-256 of the cast the text was rendered
+from.
+
+## Audit log export (SIEM)
+
+[Export-BsnAuditLog](Export-BsnAuditLog.md) and
+[ConvertTo-BsnAuditRecord](ConvertTo-BsnAuditRecord.md) produce the
+machine-readable audit index - "the log is the index, the cast is the
+evidence". Canonical JSON records (`bsn.audit/1`: session open/close,
+input, output, resize, marker, summary; RFC 3339 UTC timestamps;
+`cast_sha256` + `event_index` + `offset_ms` per record) are exported to
+NDJSON, syslog (RFC 5424 with RFC 6587 framing, TLS by default), Splunk
+HEC (HTTPS only, batched, optional ack) or the audit transcript. Input
+records are opt-in and masked by default; `-TranscriptPath` embeds
+`transcript_sha256` in every record so a SIEM hit resolves to the
+record, the bit-exact cast and the readable txt.
+
 ## Recording options (RFC 421 semantics)
 
 | Option | Effect |
