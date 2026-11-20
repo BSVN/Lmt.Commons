@@ -26,7 +26,7 @@ Describe 'Bsn.Host manifest' {
 
     It 'exports exactly the intended public functions' {
         $manifest = Test-ModuleManifest -Path $script:ManifestPath
-        ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'ConvertTo-BsnTranscript,Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
+        ($manifest.ExportedFunctions.Keys | Sort-Object) -join ',' | Should -Be 'ConvertTo-BsnAuditRecord,ConvertTo-BsnTranscript,Export-BsnAuditLog,Show-InteractiveTranscript,Start-InteractiveTranscript,Stop-InteractiveTranscript'
     }
 
     It 'exposes the online-help HelpUri for every public function' {
@@ -49,7 +49,7 @@ Describe 'Bsn.Host manifest' {
 
 Describe 'Bsn.Host module' {
     It 'loads and exposes its public commands' {
-        foreach ($commandName in @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript', 'ConvertTo-BsnTranscript')) {
+        foreach ($commandName in @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript', 'ConvertTo-BsnTranscript', 'ConvertTo-BsnAuditRecord', 'Export-BsnAuditLog')) {
             Get-Command -Name $commandName -Module 'Bsn.Host' -ErrorAction 'SilentlyContinue' | Should -Not -BeNullOrEmpty
         }
     }

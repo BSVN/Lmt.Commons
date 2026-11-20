@@ -101,6 +101,27 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   interop assembly: `Start-InteractiveTranscript` creates it, the engine
   wrappers pass it on as `-AuditMetadata`, and the cast writer both
   engines share writes it into the header.
+- `ConvertTo-BsnAuditRecord` and `Export-BsnAuditLog`: structured audit
+  export of recordings - the machine-readable index of the recorded
+  evidence ("the log is the index, the cast is the evidence"), issue
+  #21. The pure converter emits canonical `bsn.audit/1` JSON records
+  (taxonomy: session open/close, input, output, resize, marker, summary;
+  RFC 3339 UTC timestamps computed from the header timestamp plus event
+  offsets; `cast_sha256` + `event_index` + `offset_ms` in every record
+  so any SIEM hit replays bit-exact from the cast; optional
+  `transcript_sha256` tying records to the readable transcript). The
+  exporter forwards them through four targets: NDJSON (local sink, UTF-8
+  no BOM, LF), syslog (RFC 5424 with PRI = facility * 8 + severity,
+  structured correlation data, MSGID per taxonomy, RFC 6587
+  octet-counted TCP frames, TLS by default with plain TCP/UDP as lab
+  opt-ins), Splunk HEC (HTTPS only, batched, token via `-Token` or
+  `BSN_SPLUNK_HEC_TOKEN`, optional `-Ack` delivery confirmation) and
+  Transcript (the #22 readable rendering with the audit frame). Input
+  records are opt-in and masked by a documented heuristic by default;
+  output records are opt-in, ANSI-stripped and size-capped. Supports
+  `-WhatIf`/`-Confirm`; forwarder failures are loud terminating errors.
+  Transports are thin and fully mocked in tests - no network in CI.
+  [#21](https://github.com/BSVN/Lmt.Commons/issues/21)
 - `ConvertTo-BsnTranscript`: converts an asciicast (.cast) recording
   into a Start-Transcript-style plain-text transcript - the readable,
   auditor-facing rendering of the recorded evidence (issue #22). The

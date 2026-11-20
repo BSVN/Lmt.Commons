@@ -18,6 +18,10 @@
     href: en-US/Show-InteractiveTranscript.md
   - name: ConvertTo-BsnTranscript
     href: en-US/ConvertTo-BsnTranscript.md
+  - name: ConvertTo-BsnAuditRecord
+    href: en-US/ConvertTo-BsnAuditRecord.md
+  - name: Export-BsnAuditLog
+    href: en-US/Export-BsnAuditLog.md
 - name: Bsn.SystemManagement
   items:
   - name: about_Bsn.SystemManagement
