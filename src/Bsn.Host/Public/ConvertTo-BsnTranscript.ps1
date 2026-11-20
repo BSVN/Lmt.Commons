@@ -215,11 +215,12 @@ function ConvertTo-BsnTranscript {
         # UTF8 is mapped to a BOM-less UTF8Encoding explicitly: real 5.1
         # transcripts are UTF-16LE and PS 7 transcripts UTF-8, and the
         # export standardizes on UTF-8 without BOM on every edition.
-        $encodingObject = switch ($Encoding.ToString()) {
-            'ASCII' { [System.Text.Encoding]::ASCII }
-            'Unicode' { [System.Text.Encoding]::Unicode }
-            'BigEndianUnicode' { [System.Text.Encoding]::BigEndianUnicode }
-            'UTF32' { [System.Text.Encoding]::UTF32 }
+        # The switch compares enum members directly (no ToString).
+        $encodingObject = switch ($Encoding) {
+            ([BsnTranscriptEncoding]::ASCII) { [System.Text.Encoding]::ASCII }
+            ([BsnTranscriptEncoding]::Unicode) { [System.Text.Encoding]::Unicode }
+            ([BsnTranscriptEncoding]::BigEndianUnicode) { [System.Text.Encoding]::BigEndianUnicode }
+            ([BsnTranscriptEncoding]::UTF32) { [System.Text.Encoding]::UTF32 }
             default { [System.Text.UTF8Encoding]::new($false) }
         }
         $inputCount = 0

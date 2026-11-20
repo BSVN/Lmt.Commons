@@ -19,15 +19,32 @@ enum BsnRecordingFormat {
     Mp4
 }
 
+# Header frame of ConvertTo-BsnTranscript output:
+#   Standard - Start-Transcript-like header; engine-derived fields that a
+#              cast cannot record (Username, Machine, PSVersion, ...) are
+#              blank unless supplied via parameters.
+#   Bsn      - adds the audit frame: deterministic session id, recorded-by
+#              version, terminal size, cast file path, cast SHA-256 and
+#              the v3 exit code.
 enum BsnTranscriptHeaderMode {
     Standard
     Bsn
 }
 
 enum BsnTranscriptRenderMode {
+    # Line-oriented plain-text rendering: strip CSI/OSC/VT escape
+    # sequences and resolve carriage-return overtype and backspace (the
+    # way tools such as ansi2txt flatten terminal streams). Line-oriented
+    # shell sessions convert cleanly; full-screen TUI redraws leave
+    # columnar residue. A full VT screen-buffer emulation tier may join
+    # later - this enum reserves that value space.
     Strip
 }
 
+# Output encoding of the transcript file: UTF8 (the default) is written
+# without BOM; the Unicode variants are written with a BOM. Real
+# Start-Transcript files are UTF-16LE (Windows PowerShell 5.1) or UTF-8
+# (PowerShell 7); the converter standardizes on UTF-8 across editions.
 enum BsnTranscriptEncoding {
     UTF8
     ASCII
