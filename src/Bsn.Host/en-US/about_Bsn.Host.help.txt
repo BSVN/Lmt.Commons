@@ -44,6 +44,36 @@ LONG DESCRIPTION
     do not degrade to '?' on OEM-codepage consoles or in Windows
     PowerShell 5.1 hosts.
 
+  TEXT TRANSCRIPT EXPORT (START-TRANSCRIPT COMPATIBLE)
+
+    ConvertTo-BsnTranscript renders a recording as the artifact auditors
+    actually read: a Start-Transcript-style plain-text transcript with
+    the familiar header/footer frame. The conversion is pure (no console
+    replay): output events are concatenated in timeline order, terminal
+    escape sequences are stripped and carriage-return overtype/backspace
+    are resolved, so shell sessions - where echo places the typed
+    commands into the output stream - convert to clean text.
+
+    -HeaderMode Standard (default) mimics Start-Transcript: engine
+    fields it derives from the session (Username, Machine, PSVersion,
+    ...) are blank unless supplied via parameters; Host Application is
+    derived from the cast header. -HeaderMode Bsn adds the audit frame:
+    a deterministic session id, recorded-by version, terminal size,
+    cast file path and the SHA-256 of the cast the text was rendered
+    from, proving which evidence produced the transcript.
+
+    -AnnotateCommands inserts recorded keystrokes ('i' events) as typed
+    lines - for sessions where echo was absent (password prompts).
+    Full-screen TUI redraws remain columnar residue (documented
+    limitation of the line-oriented rendering; the cast replays
+    exactly). Output is UTF-8 without BOM with CRLF line endings on
+    every edition (-Encoding switches it); -OutPath writes the file,
+    the pipeline emits the text.
+
+    Example:
+
+        ConvertTo-BsnTranscript session01.cast -OutPath session01.txt
+
   RECORDING OPTIONS (RFC 421 SEMANTICS)
 
     -CastVersion selects the asciicast format version: 2 (default) or 3.
@@ -115,5 +145,6 @@ SEE ALSO
     Start-InteractiveTranscript
     Stop-InteractiveTranscript
     Show-InteractiveTranscript
+    ConvertTo-BsnTranscript
     Start-Transcript
     Stop-Transcript

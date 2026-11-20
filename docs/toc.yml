@@ -16,6 +16,8 @@
     href: en-US/Stop-InteractiveTranscript.md
   - name: Show-InteractiveTranscript
     href: en-US/Show-InteractiveTranscript.md
+  - name: ConvertTo-BsnTranscript
+    href: en-US/ConvertTo-BsnTranscript.md
 - name: Bsn.SystemManagement
   items:
   - name: about_Bsn.SystemManagement
