@@ -5,6 +5,7 @@
 [![codecov](https://codecov.io/gh/BSVN/Lmt.Commons/branch/main/graph/badge.svg)](https://codecov.io/gh/BSVN/Lmt.Commons)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=BSVN_Lmt.Commons&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=BSVN_Lmt.Commons)
 [![SonarCloud Tech Debt](https://sonarcloud.io/api/project_badges/measure?project=BSVN_Lmt.Commons&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=BSVN_Lmt.Commons)
+[![Docs](https://github.com/BSVN/Lmt.Commons/actions/workflows/Docs.yml/badge.svg)](https://bsvn.github.io/Lmt.Commons/)
 [![GitHub release](https://img.shields.io/github/v/release/BSVN/Lmt.Commons)](https://github.com/BSVN/Lmt.Commons/releases/latest)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
@@ -14,7 +15,8 @@ the same monorepo/many-modules model used by azure-powershell, but built for
 our own module family. **New modules are created with
 [Plaster](https://github.com/PowerShellOrg/Plaster)**: the repository ships a
 Plaster template that scaffolds a complete, consistent `Bsn.<Name>` module in
-one command.
+one command. Online help for every cmdlet lives at
+**https://bsvn.github.io/Lmt.Commons/**.
 
 | Module                                            | Description                                                            | PowerShell Gallery |
 | ------------------------------------------------- | ---------------------------------------------------------------------- | ------------------ |
@@ -130,7 +132,7 @@ touching the gallery.
 templates/BsnModule/     Plaster template that scaffolds new Bsn.* modules
 tools/New-BsnModule.ps1  Plaster wrapper for scaffolding
 src/                     one folder per generated module (the build targets it automatically)
-docs/                    module documentation
+docs/                    module documentation (built by DocFX into the online help site)
 build.ps1                multi-module analyze/test/package/publish pipeline
 ```
 

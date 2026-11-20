@@ -1,4 +1,8 @@
-# Bsn.Host cmdlets
+# Start-InteractiveTranscript
+
+Records an interactive terminal session - including full-screen TUI
+applications such as sconfig, vim, htop or nmtui - into a replayable
+asciicast v2/v3 file.
 
 Host-level terminal session recording for PowerShell. Implements
 [PowerShell#28353](https://github.com/PowerShell/PowerShell/issues/28353)

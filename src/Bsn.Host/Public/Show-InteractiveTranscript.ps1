@@ -46,6 +46,9 @@
     Show-InteractiveTranscript -Path .\audit\session01.cast -Speed 4 -IdleTimeLimit 2
 
     Replays four times faster, skipping pauses longer than two seconds.
+
+.LINK
+    https://bsvn.github.io/Lmt.Commons/en-US/Show-InteractiveTranscript.html
 #>
 function Show-InteractiveTranscript {
     [CmdletBinding()]

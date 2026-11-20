@@ -32,6 +32,9 @@
 .NOTES
     When no recording is active in this session, the cmdlet throws an
     explanatory error instead of touching anything.
+
+.LINK
+    https://bsvn.github.io/Lmt.Commons/en-US/Stop-InteractiveTranscript.html
 #>
 function Stop-InteractiveTranscript {
     [CmdletBinding(SupportsShouldProcess = $true)]

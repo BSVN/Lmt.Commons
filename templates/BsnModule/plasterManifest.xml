@@ -11,7 +11,7 @@
   </metadata>
   <parameters>
     <parameter name="ModuleName" type="text" prompt="Enter the module name (must start with 'Bsn.'):" default="Bsn.Example" pattern="^Bsn\.[A-Z][A-Za-z0-9]{1,50}$" />
-    <parameter name="CmdletName" type="text" prompt="Enter the name of the first public command (approved Verb-Noun):" default="Get-Example" pattern="^[A-Z][a-z]+\-[A-Z][A-Za-z0-9]+$" />
+    <parameter name="CmdletName" type="text" prompt="Enter the name of the first public command (approved Verb-Noun; prefix the noun with 'Bsn' when the noun sits in a shared/Microsoft namespace, e.g. Get-BsnExample):" default="Get-Example" pattern="^[A-Z][a-z]+\-[A-Z][A-Za-z0-9]+$" />
     <parameter name="Description" type="text" prompt="Enter a short module description:" default="A BSN PowerShell module." />
     <parameter name="Version" type="text" prompt="Enter the initial module version:" default="0.1.0" pattern="^\d+\.\d+\.\d+$" />
     <parameter name="Author" type="text" prompt="Enter the author name:" default="BSVN" />

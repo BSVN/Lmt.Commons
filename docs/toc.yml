@@ -1,0 +1,24 @@
+- name: Home
+  href: index.md
+- name: Bsn.Common
+  items:
+  - name: about_Bsn.Common
+    href: en-US/about_Bsn.Common.md
+  - name: Get-BsnOperatingSystem
+    href: en-US/Get-BsnOperatingSystem.md
+- name: Bsn.Host
+  items:
+  - name: about_Bsn.Host
+    href: en-US/about_Bsn.Host.md
+  - name: Start-InteractiveTranscript
+    href: en-US/Start-InteractiveTranscript.md
+  - name: Stop-InteractiveTranscript
+    href: en-US/Stop-InteractiveTranscript.md
+  - name: Show-InteractiveTranscript
+    href: en-US/Show-InteractiveTranscript.md
+- name: Bsn.SystemManagement
+  items:
+  - name: about_Bsn.SystemManagement
+    href: en-US/about_Bsn.SystemManagement.md
+  - name: Suspend-Computer
+    href: en-US/Suspend-Computer.md
