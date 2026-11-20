@@ -54,9 +54,14 @@ parser (no console replay, no network) and emits JSON-serializable
 - **severity** - notice (`session_open`/`session_close`/`session_marker`
   /`session_summary`), info (input/output), debug (resize); mapped to
   RFC 5424 PRI values by the syslog exporter.
-- **session** - `host` and `user` are not recorded inside a cast: blank
-  unless supplied via `-ComputerName`/`-UserName`; `shell` and `command`
-  come from the cast header.
+- **session** - `shell` and `command` come from the cast header; `host`
+  and `user` are blank for ecosystem casts unless supplied via
+  `-ComputerName`/`-UserName` - recordings made by
+  Start-InteractiveTranscript carry them in the header's capture-time
+  `bsn` metadata block, which fills the session context automatically
+  (along with `id` from the recorded GUID session id and
+  `recorded_by` from the recording module version). Explicit parameters
+  still override the block.
 - **input** - opt-in (`-IncludeInput`); masked by the heuristic
   (`password=***`) by default, `-NoMaskSecrets` disables it. The
   heuristic is never a guarantee - secrets typed at hidden prompts are
