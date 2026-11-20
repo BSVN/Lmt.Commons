@@ -172,6 +172,80 @@ Describe 'ConvertTo-BsnAsciicast' {
         }
     }
 
+    Context 'capture-time audit metadata (bsn header block)' {
+        It 'writes the bsn metadata block into the v2 header when supplied' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'meta-v2.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'meta-v2.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'meta-v2.cast'
+            Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            $metadata = [ordered]@{
+                session_id = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+                recorded_by = 'bsn.host 0.3.0'
+                host = 'ws01'
+                user = 'jdoe'
+                pid = 4242
+                psversion = '7.6.9'
+                psedition = 'Core'
+            }
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -HeaderMetadata $m } $outputPath $timingPath $castPath ($metadata | ConvertTo-Json -Compress)
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header.bsn.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+            $header.bsn.recorded_by | Should -Be 'bsn.host 0.3.0'
+            $header.bsn.host | Should -Be 'ws01'
+            $header.bsn.user | Should -Be 'jdoe'
+            $header.bsn.pid | Should -Be 4242
+            $header.bsn.psversion | Should -Be '7.6.9'
+            $header.bsn.psedition | Should -Be 'Core'
+            # The rest of the header stays spec-shaped.
+            $header.version | Should -Be 2
+            $header.env.SHELL | Should -Be 'shell'
+        }
+
+        It 'writes the bsn metadata block into the v3 header when supplied' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'meta-v3.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'meta-v3.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'meta-v3.cast'
+            Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -HeaderMetadata $m } $outputPath $timingPath $castPath '{"session_id":"gid"}'
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header.version | Should -Be 3
+            $header.bsn.session_id | Should -Be 'gid'
+        }
+
+        It 'omits the bsn block when no metadata is supplied' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'nometa.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'nometa.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'nometa.cast'
+            Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
+        }
+
+        It 'ignores malformed metadata instead of corrupting the header' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.cast'
+            Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -HeaderMetadata $m } $outputPath $timingPath $castPath 'not-json-object'
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header.version | Should -Be 2
+            $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'query sequences are filtered out of converted casts (issue #20)' {
         # https://github.com/BSVN/Lmt.Commons/issues/20
         # Unix script(1) logs carry the same response-eliciting query bytes

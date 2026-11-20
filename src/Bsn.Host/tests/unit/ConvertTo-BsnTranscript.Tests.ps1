@@ -120,6 +120,14 @@ BeforeAll {
 {"version": 2, "width": 80, "height": 24, "timestamp": 1793895000, "env": {"SHELL": "pwsh", "TERM": "xterm-256color"}}
 [0, "o", "\u2500\u2500rule\r\n"]
 '@ -NoNewline
+
+    # A cast recorded by the new recorder, carrying the capture-time audit
+    # metadata block in its header.
+    $script:MetadataCastPath = Join-Path -Path $TestDrive -ChildPath 'metadata.cast'
+    Set-Content -LiteralPath $script:MetadataCastPath -Value @'
+{"version": 2, "width": 80, "height": 24, "timestamp": 1793895000, "env": {"SHELL": "pwsh", "TERM": "xterm-256color"}, "bsn": {"session_id": "0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8", "recorded_by": "bsn.host 0.3.0", "host": "ws01", "user": "jdoe", "pid": 4242, "psversion": "7.6.9", "psedition": "Core"}}
+[0, "o", "hello\r\n"]
+'@ -NoNewline
 }
 
 Describe 'Remove-BsnTerminalSequence' {
@@ -463,6 +471,36 @@ Describe 'ConvertTo-BsnTranscript' {
             $invalidPath = Join-Path -Path $TestDrive -ChildPath 'invalid.cast'
             Set-Content -LiteralPath $invalidPath -Value '{"version": 1}' -NoNewline
             { ConvertTo-BsnTranscript -Path $invalidPath } | Should -Throw '*not an asciicast v2 or v3*'
+        }
+    }
+
+    Context 'capture metadata (bsn header block)' {
+        It 'auto-fills the engine fields from the capture-time bsn block' {
+            $result = ConvertTo-BsnTranscript -Path $script:MetadataCastPath
+            $result | Should -BeLike '*Username: jdoe*'
+            $result | Should -BeLike '*Machine: ws01*'
+            $result | Should -BeLike '*Process ID: 4242*'
+            $result | Should -BeLike '*PSVersion: 7.6.9*'
+            $result | Should -BeLike '*PSEdition: Core*'
+        }
+
+        It 'prefers the recorded session id and recorded-by version in Bsn mode' {
+            $result = ConvertTo-BsnTranscript -Path $script:MetadataCastPath -HeaderMode Bsn
+            $result | Should -BeLike '*Session Id: 0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8*'
+            $result | Should -BeLike '*Recorded By: bsn.host 0.3.0*'
+        }
+
+        It 'lets explicit parameters override the bsn block' {
+            $result = ConvertTo-BsnTranscript -Path $script:MetadataCastPath -Username 'override' -Machine 'other01' -HeaderMode Bsn -SessionId 'norm-1'
+            $result | Should -BeLike '*Username: override*'
+            $result | Should -BeLike '*Machine: other01*'
+            $result | Should -BeLike '*Session Id: norm-1*'
+        }
+
+        It 'keeps the derived hash session id for casts without the bsn block' {
+            $result = ConvertTo-BsnTranscript -Path $script:SessionCastPath -HeaderMode Bsn
+            $castHash = Get-BsnTestCastHash -CastPath $script:SessionCastPath
+            $result | Should -BeLike ('*Session Id: bsn-' + $castHash.Substring(0, 12) + '*')
         }
     }
 }

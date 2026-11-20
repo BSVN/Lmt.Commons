@@ -198,7 +198,6 @@ function Start-InteractiveTranscript {
         if (-not $PSCmdlet.ShouldProcess($resolvedCastPath, 'Record interactive terminal session')) {
             return
         }
-
         if ($ShowRecordingIndicator.IsPresent -and $Command) {
             Write-Warning -Message '-ShowRecordingIndicator applies only to the interactive shell mode (used when -Command is omitted); the indicator is not applied to command recordings.'
         }
@@ -213,6 +212,30 @@ function Start-InteractiveTranscript {
             Split-Path -Leaf -Path (Get-BsnDefaultShell)
         }
 
+        # Capture-time audit metadata (the cast header's "bsn" block): the
+        # recording stamps who/where/what-version into the artifact itself,
+        # so downstream consumers (ConvertTo-BsnTranscript,
+        # ConvertTo-BsnAuditRecord, Export-BsnAuditLog) derive the session
+        # context from the recording instead of asking for it. The session
+        # id is a GUID minted at capture time - the recording and its
+        # downstream audit artifacts share one stable identity.
+        $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
+        $recordedBy = 'bsn.host'
+        if ($owningModule -and $owningModule.Version) {
+            $recordedBy = 'bsn.host {0}' -f $owningModule.Version
+        }
+        $captureMetadata = [ordered]@{
+            session_id = [guid]::NewGuid().ToString()
+            recorded_by = $recordedBy
+            host = [System.Net.Dns]::GetHostName()
+            user = [Environment]::UserName
+            pid = $PID
+            psversion = $PSVersionTable.PSVersion.ToString()
+            psedition = [string]$PSVersionTable.PSEdition
+        }
+        $headerMetadata = $captureMetadata | ConvertTo-Json -Compress -Depth 3
+        Write-Verbose -Message ('Recording capture metadata: {0}' -f $headerMetadata)
+
         # Stop signaling channel: Stop-InteractiveTranscript (running inside the recorded
         # session) creates this file; the recording engine finalizes and returns.
         $previousStopFile = $env:BsnHostRecordingStopFile
@@ -222,12 +245,12 @@ function Start-InteractiveTranscript {
         try {
             if ($platform -eq [BsnOperatingSystem]::Windows) {
                 $commandLine = Get-BsnRecordingCommandLine -Command $Command -ShowRecordingIndicator:$ShowRecordingIndicator.IsPresent
-                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion
+                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -HeaderMetadata $headerMetadata
             }
             else {
                 # Linux and macOS are both Unix: they share the script(1)-based engine,
                 # which picks util-linux (exact timing) or BSD script (approximated) itself.
-                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion
+                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -HeaderMetadata $headerMetadata
             }
         }
         finally {

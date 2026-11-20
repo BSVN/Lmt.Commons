@@ -54,6 +54,22 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Capture-time audit metadata in the cast header (the `bsn` block)**:
+  `Start-InteractiveTranscript` stamps the session context into the
+  recording at capture time - a GUID `session_id` minted when the
+  recording starts, `recorded_by` module version, `host`, `user`, `pid`
+  and the recording PowerShell's `psversion`/`psedition` - under a `bsn`
+  key of the cast header. The asciicast spec treats unknown header keys
+  as ignorable, so such casts stay fully ecosystem-compatible
+  (`asciinema` untouched). Downstream consumers derive the session
+  context from the recording instead of asking for it:
+  `ConvertTo-BsnTranscript` auto-fills the Start-Transcript header
+  fields (Username, Machine, Process ID, PSVersion, PSEdition) and the
+  Bsn audit frame's session id / recorded-by, with explicit parameters
+  still overriding; the audit converters consume the same block. Both
+  engines stamp the block (Windows: the ConPTY `CastWriter`; Unix: the
+  `script(1)` conversion), and a malformed metadata value can never
+  corrupt the header (shape-guarded, omitted instead).
 - `ConvertTo-BsnTranscript`: converts an asciicast (.cast) recording
   into a Start-Transcript-style plain-text transcript - the readable,
   auditor-facing rendering of the recorded evidence (issue #22). The
