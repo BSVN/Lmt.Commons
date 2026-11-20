@@ -168,7 +168,7 @@
     determinism auditors rely on.
 
 .LINK
-    https://github.com/BSVN/Lmt.Commons
+    https://bsvn.github.io/Lmt.Commons/en-US/ConvertTo-BsnTranscript.html
 #>
 function ConvertTo-BsnTranscript {
     [CmdletBinding()]
