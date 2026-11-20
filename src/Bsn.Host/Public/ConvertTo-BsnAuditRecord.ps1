@@ -74,11 +74,16 @@
     Overrides the session id. Derived from the cast hash when omitted.
 
 .PARAMETER ComputerName
-    Fills the session host field (blank by default - casts do not record
-    the machine they were captured on).
+    Overrides the session host field. Blank by default: casts do not
+    record the machine they were captured on - recordings made by
+    Start-InteractiveTranscript carry it in the header's capture-time
+    bsn metadata block, which this converter reads automatically.
 
 .PARAMETER UserName
-    Fills the session user field (blank by default).
+    Overrides the session user field. Recordings made by
+    Start-InteractiveTranscript carry the user in the header's
+    capture-time bsn metadata block, which this converter reads
+    automatically.
 
 .PARAMETER Origin
     Fills the session origin field (default 'local').
@@ -222,11 +227,46 @@ function ConvertTo-BsnAuditRecord {
             }
         }
 
-        $sessionIdText = if ($SessionId) { $SessionId } else { 'bsn-' + $castHash.Substring(0, 12) }
+        # session context resolution: explicit parameters first (SIEM
+        # normalization), then the capture-time bsn metadata block stamped
+        # by Start-InteractiveTranscript, then blank/derived.
+        $bsnBlock = Get-BsnObjectProperty -Object $timeline.Header -Name 'bsn'
+        $bsnHost = ''
+        $bsnUser = ''
+        $bsnRecordedBy = ''
+        $bsnSessionId = ''
+        if ($null -ne $bsnBlock) {
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'host'
+            if ($null -ne $probeValue) { $bsnHost = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'user'
+            if ($null -ne $probeValue) { $bsnUser = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'recorded_by'
+            if ($null -ne $probeValue) { $bsnRecordedBy = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'session_id'
+            if ($null -ne $probeValue) { $bsnSessionId = [string]$probeValue }
+        }
+
+        $sessionHost = if ($ComputerName) { $ComputerName } else { $bsnHost }
+        $sessionUser = if ($UserName) { $UserName } else { $bsnUser }
+        $sessionIdText = if ($SessionId) {
+            $SessionId
+        }
+        elseif ($bsnSessionId) {
+            $bsnSessionId
+        }
+        else {
+            'bsn-' + $castHash.Substring(0, 12)
+        }
+
+        # recorded_by prefers the version that made the recording (capture
+        # time bsn block) over the version doing the conversion.
         $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
-        $recordedBy = 'bsn.host'
-        if ($owningModule -and $owningModule.Version) {
-            $recordedBy = 'bsn.host {0}' -f $owningModule.Version
+        $recordedBy = $bsnRecordedBy
+        if (-not $recordedBy) {
+            $recordedBy = 'bsn.host'
+            if ($owningModule -and $owningModule.Version) {
+                $recordedBy = 'bsn.host {0}' -f $owningModule.Version
+            }
         }
 
         # session_open: absolute recording start, full session context.
@@ -238,8 +278,8 @@ function ConvertTo-BsnAuditRecord {
             session = [pscustomobject]@{
                 id = $sessionIdText
                 recorded_by = $recordedBy
-                host = $ComputerName
-                user = $UserName
+                host = $sessionHost
+                user = $sessionUser
                 shell = $shellName
                 command = [string]$commandValue
                 origin = $Origin
@@ -296,8 +336,8 @@ function ConvertTo-BsnAuditRecord {
                     session = [pscustomobject]@{
                         id = $sessionIdText
                         recorded_by = $recordedBy
-                        host = $ComputerName
-                        user = $UserName
+                        host = $sessionHost
+                        user = $sessionUser
                         shell = $shellName
                         command = [string]$commandValue
                         origin = $Origin
@@ -332,8 +372,8 @@ function ConvertTo-BsnAuditRecord {
                     session = [pscustomobject]@{
                         id = $sessionIdText
                         recorded_by = $recordedBy
-                        host = $ComputerName
-                        user = $UserName
+                        host = $sessionHost
+                        user = $sessionUser
                         shell = $shellName
                         command = [string]$commandValue
                         origin = $Origin
@@ -366,8 +406,8 @@ function ConvertTo-BsnAuditRecord {
                     session = [pscustomobject]@{
                         id = $sessionIdText
                         recorded_by = $recordedBy
-                        host = $ComputerName
-                        user = $UserName
+                        host = $sessionHost
+                        user = $sessionUser
                         shell = $shellName
                         command = [string]$commandValue
                         origin = $Origin
@@ -392,8 +432,8 @@ function ConvertTo-BsnAuditRecord {
                     session = [pscustomobject]@{
                         id = $sessionIdText
                         recorded_by = $recordedBy
-                        host = $ComputerName
-                        user = $UserName
+                        host = $sessionHost
+                        user = $sessionUser
                         shell = $shellName
                         command = [string]$commandValue
                         origin = $Origin
@@ -440,8 +480,8 @@ function ConvertTo-BsnAuditRecord {
             session = [pscustomobject]@{
                 id = $sessionIdText
                 recorded_by = $recordedBy
-                host = $ComputerName
-                user = $UserName
+                host = $sessionHost
+                user = $sessionUser
                 shell = $shellName
                 command = [string]$commandValue
                 origin = $Origin
@@ -464,8 +504,8 @@ function ConvertTo-BsnAuditRecord {
             session = [pscustomobject]@{
                 id = $sessionIdText
                 recorded_by = $recordedBy
-                host = $ComputerName
-                user = $UserName
+                host = $sessionHost
+                user = $sessionUser
                 shell = $shellName
                 command = [string]$commandValue
                 origin = $Origin

@@ -70,6 +70,14 @@ BeforeAll {
         ('[0.2, "i", {0}]' -f (('password=hunter2' + "`r") | ConvertTo-Json -Compress))
     ) | Set-Content -LiteralPath $script:SecretCastPath
 
+    # A cast recorded by the new recorder, carrying the capture-time audit
+    # metadata block in its header.
+    $script:MetadataAuditCastPath = Join-Path -Path $TestDrive -ChildPath 'metadata-audit.cast'
+    @(
+        '{"version": 2, "width": 80, "height": 24, "timestamp": 1793895000, "bsn": {"session_id": "0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8", "recorded_by": "bsn.host 0.3.0", "host": "ws01", "user": "jdoe"}}'
+        ('[0.1, "o", {0}]' -f ("hello`r`n" | ConvertTo-Json -Compress))
+    ) | Set-Content -LiteralPath $script:MetadataAuditCastPath
+
     # A cast with a long output line, for the truncation test.
     $script:LongOutputCastPath = Join-Path -Path $TestDrive -ChildPath 'long-output.cast'
     $script:LongOutput = ('x' * 100) + "`r`n"
@@ -207,6 +215,31 @@ Describe 'ConvertTo-BsnAuditRecord' {
             Set-Content -LiteralPath $path -Value '{"version": 2, "width": 80, "height": 24}' -NoNewline
             $open = ConvertTo-BsnAuditRecord -Path $path | Select-Object -First 1
             $open.time | Should -Be (Get-BsnAuditExpectedTime -Seconds 0)
+        }
+    }
+
+    Context 'capture metadata (bsn header block)' {
+        It 'auto-fills the session context from the capture-time bsn block' {
+            $open = ConvertTo-BsnAuditRecord -Path $script:MetadataAuditCastPath | Select-Object -First 1
+            $open.session.id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+            $open.session.recorded_by | Should -Be 'bsn.host 0.3.0'
+            $open.session.host | Should -Be 'ws01'
+            $open.session.user | Should -Be 'jdoe'
+        }
+
+        It 'lets explicit parameters override the bsn block' {
+            $open = ConvertTo-BsnAuditRecord -Path $script:MetadataAuditCastPath -ComputerName 'other01' -UserName 'override' -SessionId 'norm-1' |
+                Select-Object -First 1
+            $open.session.host | Should -Be 'other01'
+            $open.session.user | Should -Be 'override'
+            $open.session.id | Should -Be 'norm-1'
+        }
+
+        It 'keeps derived host/id for casts without the bsn block' {
+            $record = ConvertTo-BsnAuditRecord -Path $script:AuditCastPath | Select-Object -First 1
+            $castHash = Get-BsnTestFileHash -File $script:AuditCastPath
+            $record.session.host | Should -Be ''
+            $record.session.id | Should -Be ('bsn-' + $castHash.Substring(0, 12))
         }
     }
 
