@@ -23,7 +23,6 @@ function Start-BsnUnixPtyRecording {
     [CmdletBinding()]
     param(
         [string]$Command,
-
         [Parameter(Mandatory = $true)]
         [string]$CastPath,
 
@@ -34,7 +33,11 @@ function Start-BsnUnixPtyRecording {
         [string]$StopFilePath,
 
         [ValidateSet(2, 3)]
-        [int]$CastVersion = 2
+        [int]$CastVersion = 2,
+
+        # Pre-serialized JSON object written under the cast header's "bsn"
+        # key (the capture-time audit metadata block).
+        [string]$HeaderMetadata = ''
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -123,10 +126,10 @@ function Start-BsnUnixPtyRecording {
         $stopwatch.Stop()
 
         if ($supportsTiming) {
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -HeaderMetadata $HeaderMetadata
         }
         else {
-            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
+            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -HeaderMetadata $HeaderMetadata
         }
     }
     finally {

@@ -74,6 +74,39 @@ LONG DESCRIPTION
 
         ConvertTo-BsnTranscript session01.cast -OutPath session01.txt
 
+  AUDIT LOG EXPORT (SIEM)
+
+    Export-BsnAuditLog turns a recording into the machine-readable audit
+    index - "the log is the index, the cast is the evidence". It emits
+    canonical JSON records (schema bsn.audit/1; event taxonomy:
+    session open/close, input, output, resize, marker, summary; RFC 3339
+    UTC timestamps; cast_sha256 + event_index + offset_ms in every
+    record, so any SIEM hit replays bit-exact from the cast) through one
+    of four targets:
+
+        Export-BsnAuditLog -Path s.cast -Target NDJSON   -OutPath s.ndjson
+        Export-BsnAuditLog -Path s.cast -Target Syslog   -Server log.example -Port 6514 -Transport TLS
+        Export-BsnAuditLog -Path s.cast -Target SplunkHec -Uri https://splunk.example:8088
+        Export-BsnAuditLog -Path s.cast -Target Transcript -OutPath s.txt
+
+    NDJSON is the local sink (one JSON object per line). Syslog speaks
+    RFC 5424 (PRI = facility * 8 + severity, structured data with the
+    correlation keys, RFC 6587 octet-counted TCP frames); TLS is the
+    default, plain TCP/UDP are lab opt-ins. Splunk HEC posts batched
+    events over HTTPS only (token via -Token or the BSN_SPLUNK_HEC_TOKEN
+    environment variable, optional -Ack delivery confirmation).
+    Transcript writes the readable rendering of the same evidence.
+
+    Privacy: input records are opt-in (-IncludeInput - input contains
+    everything typed, including secrets) and masked by a heuristic by
+    default (never a guarantee); output records are opt-in, ANSI-stripped
+    and size-capped. -TranscriptPath embeds transcript_sha256 in every
+    record, tying each SIEM hit to the record, the bit-exact cast and
+    the readable txt. Forwarder failures are loud terminating errors.
+
+    ConvertTo-BsnAuditRecord is the pure converter underneath: the same
+    records, emitted to the pipeline.
+
   RECORDING OPTIONS (RFC 421 SEMANTICS)
 
     -CastVersion selects the asciicast format version: 2 (default) or 3.
@@ -146,5 +179,7 @@ SEE ALSO
     Stop-InteractiveTranscript
     Show-InteractiveTranscript
     ConvertTo-BsnTranscript
+    ConvertTo-BsnAuditRecord
+    Export-BsnAuditLog
     Start-Transcript
     Stop-Transcript
