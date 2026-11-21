@@ -454,6 +454,21 @@ Describe 'ConvertTo-BsnTranscript' {
         }
     }
 
+    Context 'parameter typing' {
+        It 'types the mode and encoding parameters as native enums' {
+            $command = Get-Command -Name 'ConvertTo-BsnTranscript'
+            $command.Parameters['HeaderMode'].ParameterType.Name | Should -Be 'BsnTranscriptHeaderMode'
+            $command.Parameters['RenderMode'].ParameterType.Name | Should -Be 'BsnTranscriptRenderMode'
+            $command.Parameters['Encoding'].ParameterType.Name | Should -Be 'BsnTranscriptEncoding'
+        }
+
+        It 'binds the string member names like the previous ValidateSet values' {
+            $result = ConvertTo-BsnTranscript -Path $script:SessionCastPath -HeaderMode Bsn -Encoding UTF8 -RenderMode Strip
+            $result | Should -BeLike '*Session Id: bsn-*'
+            $result | Should -BeLike '*Recorded By: Bsn.Host*'
+        }
+    }
+
     Context 'error handling' {
         It 'rejects missing cast files' {
             { ConvertTo-BsnTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'missing.cast') } | Should -Throw "*does not exist*"

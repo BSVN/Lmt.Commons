@@ -69,12 +69,17 @@
 .PARAMETER HeaderMode
     Standard (default) renders a Start-Transcript-like frame; Bsn adds
     the audit extension fields (session id, recorded-by, terminal size,
-    cast file, cast SHA-256, exit code).
+    cast file, cast SHA-256, exit code). Typed as the
+    BsnTranscriptHeaderMode enum (defined in Bsn.Host.psm1, like the
+    BsnRecordingFormat export enum); the string member names bind as
+    before.
 
 .PARAMETER RenderMode
     Strip (default) is the line-oriented plain-text rendering described
     above. A full VT emulation tier (screen-buffer capture) may follow in
-    a later release for TUI-heavy recordings.
+    a later release for TUI-heavy recordings. Typed as the
+    BsnTranscriptRenderMode enum (the enum reserves the value space for
+    that future tier).
 
 .PARAMETER AnnotateCommands
     Inserts recorded input ('i') events into the transcript as
@@ -86,7 +91,8 @@
 .PARAMETER Encoding
     Output encoding: UTF8 (default, without BOM), ASCII, Unicode
     (UTF-16LE), BigEndianUnicode or UTF32. The Unicode variants carry a
-    BOM; UTF8 deliberately does not.
+    BOM; UTF8 deliberately does not. Typed as the BsnTranscriptEncoding
+    enum; the string member names bind as before.
 
 .PARAMETER Username
     Fills the header Username field (blank by default).
@@ -180,16 +186,13 @@ function ConvertTo-BsnTranscript {
 
         [string]$OutPath,
 
-        [ValidateSet('Standard', 'Bsn')]
-        [string]$HeaderMode = 'Standard',
+        [BsnTranscriptHeaderMode]$HeaderMode = [BsnTranscriptHeaderMode]::Standard,
 
-        [ValidateSet('Strip')]
-        [string]$RenderMode = 'Strip',
+        [BsnTranscriptRenderMode]$RenderMode = [BsnTranscriptRenderMode]::Strip,
 
         [switch]$AnnotateCommands,
 
-        [ValidateSet('UTF8', 'ASCII', 'Unicode', 'BigEndianUnicode', 'UTF32')]
-        [string]$Encoding = 'UTF8',
+        [BsnTranscriptEncoding]$Encoding = [BsnTranscriptEncoding]::UTF8,
 
         [string]$Username = '',
 
@@ -212,11 +215,12 @@ function ConvertTo-BsnTranscript {
         # UTF8 is mapped to a BOM-less UTF8Encoding explicitly: real 5.1
         # transcripts are UTF-16LE and PS 7 transcripts UTF-8, and the
         # export standardizes on UTF-8 without BOM on every edition.
+        # The switch compares enum members directly (no ToString).
         $encodingObject = switch ($Encoding) {
-            'ASCII' { [System.Text.Encoding]::ASCII }
-            'Unicode' { [System.Text.Encoding]::Unicode }
-            'BigEndianUnicode' { [System.Text.Encoding]::BigEndianUnicode }
-            'UTF32' { [System.Text.Encoding]::UTF32 }
+            ([BsnTranscriptEncoding]::ASCII) { [System.Text.Encoding]::ASCII }
+            ([BsnTranscriptEncoding]::Unicode) { [System.Text.Encoding]::Unicode }
+            ([BsnTranscriptEncoding]::BigEndianUnicode) { [System.Text.Encoding]::BigEndianUnicode }
+            ([BsnTranscriptEncoding]::UTF32) { [System.Text.Encoding]::UTF32 }
             default { [System.Text.UTF8Encoding]::new($false) }
         }
         $inputCount = 0
@@ -370,7 +374,7 @@ function ConvertTo-BsnTranscript {
         $transcriptLines.Add('PSVersion: ' + $PSVersion)
         $transcriptLines.Add('PSEdition: ' + $Edition)
 
-        if ($HeaderMode -eq 'Bsn') {
+        if ($HeaderMode -eq [BsnTranscriptHeaderMode]::Bsn) {
             $transcriptLines.Add('Session Id: ' + $sessionIdText)
             $transcriptLines.Add('Recorded By: ' + $recordedByText)
             $transcriptLines.Add('Terminal Size: ' + $terminalSizeText)
