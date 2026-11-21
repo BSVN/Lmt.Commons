@@ -34,11 +34,15 @@ function Start-BsnWindowsPtyRecording {
         [string]$StopFilePath,
 
         [ValidateSet(2, 3)]
-        [int]$CastVersion = 2
+        [int]$CastVersion = 2,
+
+        # Pre-serialized JSON object written under the cast header's "bsn"
+        # key (the capture-time audit metadata block).
+        [string]$HeaderMetadata = ''
     )
 
     try {
-        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion)
+        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion, $HeaderMetadata)
     }
     catch [System.Runtime.InteropServices.EntryPointNotFoundException] {
         throw 'Interactive transcripts on Windows require pseudo-console support (Windows 10 1809 or newer).'

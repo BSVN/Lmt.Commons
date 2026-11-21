@@ -30,9 +30,23 @@
     'PowerShell transcript end' block. Fields Start-Transcript fills from
     the engine (Username, RunAs User, Machine, Process ID, PSVersion,
     PSEdition) are not recorded in a cast: they are written blank - real
-    transcripts emit blank fields too - unless supplied via parameters.
+    transcripts emit blank fields too - unless supplied via parameters
+    or present in the capture-time audit metadata block (see below).
     Host Application is derived from the cast header (command / env.SHELL)
     and can be overridden.
+
+    Capture-time audit metadata (the 'bsn' header block):
+
+    Recordings made by Start-InteractiveTranscript stamp the session
+    context into the cast header at capture time - a GUID session id,
+    recorded-by version, host, user, process id and PowerShell
+    version/edition - under a 'bsn' key. The asciicast spec treats
+    unknown header keys as ignorable, so such casts stay fully
+    ecosystem-compatible. This converter consumes the block
+    automatically: those fields fill the transcript header (and the Bsn
+    audit frame's session id / recorded-by) without parameters, and
+    explicit parameters still override. Older or ecosystem casts without
+    the block convert exactly as before.
 
     -HeaderMode controls the frame:
     - Standard (default): Start-Transcript-like, unknown fields blank.
@@ -261,6 +275,36 @@ function ConvertTo-BsnTranscript {
         $epochStart = [DateTime]::new(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
         $startLocal = $epochStart.AddSeconds($startEpoch).ToLocalTime()
 
+        # Capture-time audit metadata block ("bsn" key, stamped by
+        # Start-InteractiveTranscript): auto-fills the engine-derived header
+        # fields. Explicit parameters still win (normalization scenarios);
+        # casts without the block (ecosystem recordings, older files)
+        # behave exactly as before.
+        $bsnBlock = Get-BsnObjectProperty -Object $timeline.Header -Name 'bsn'
+        $bsnHost = ''
+        $bsnUser = ''
+        $bsnPid = ''
+        $bsnPsversion = ''
+        $bsnPsedition = ''
+        $bsnRecordedBy = ''
+        $bsnSessionId = ''
+        if ($null -ne $bsnBlock) {
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'host'
+            if ($null -ne $probeValue) { $bsnHost = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'user'
+            if ($null -ne $probeValue) { $bsnUser = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'pid'
+            if ($null -ne $probeValue) { $bsnPid = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'psversion'
+            if ($null -ne $probeValue) { $bsnPsversion = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'psedition'
+            if ($null -ne $probeValue) { $bsnPsedition = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'recorded_by'
+            if ($null -ne $probeValue) { $bsnRecordedBy = [string]$probeValue }
+            $probeValue = Get-BsnObjectProperty -Object $bsnBlock -Name 'session_id'
+            if ($null -ne $probeValue) { $bsnSessionId = [string]$probeValue }
+        }
+
         $commandValue = Get-BsnObjectProperty -Object $timeline.Header -Name 'command'
         $environmentValue = Get-BsnObjectProperty -Object $timeline.Header -Name 'env'
         $headerShell = ''
@@ -346,6 +390,14 @@ function ConvertTo-BsnTranscript {
         $startTimeText = $startLocal.ToString('yyyyMMddHHmmss')
         $endTimeText = $startLocal.AddSeconds($lastOutputSeconds).ToString('yyyyMMddHHmmss')
 
+        # Field resolution order: explicit parameter -> capture-time bsn block
+        # -> blank / derived (casts without the block keep the old behavior).
+        $usernameText = if ($Username) { $Username } else { $bsnUser }
+        $machineText = if ($Machine) { $Machine } else { $bsnHost }
+        $processIdText = if ($ProcessId) { $ProcessId } else { $bsnPid }
+        $psVersionText = if ($PSVersion) { $PSVersion } else { $bsnPsversion }
+        $psEditionText = if ($Edition) { $Edition } else { $bsnPsedition }
+
         $hostApplicationText = $HostApplication
         if (-not $hostApplicationText) {
             $hostApplicationText = [string]$commandValue
@@ -354,25 +406,38 @@ function ConvertTo-BsnTranscript {
             $hostApplicationText = $headerShell
         }
 
-        $sessionIdText = if ($SessionId) { $SessionId } else { 'bsn-' + $castHash.Substring(0, 12) }
+        $sessionIdText = if ($SessionId) {
+            $SessionId
+        }
+        elseif ($bsnSessionId) {
+            $bsnSessionId
+        }
+        else {
+            'bsn-' + $castHash.Substring(0, 12)
+        }
 
-        $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
-        $recordedByText = 'Bsn.Host'
-        if ($owningModule -and $owningModule.Version) {
-            $recordedByText = 'Bsn.Host {0}' -f $owningModule.Version
+        # Recorded By prefers the version that made the recording (the capture
+        # time bsn block) over the version doing the conversion.
+        $recordedByText = $bsnRecordedBy
+        if (-not $recordedByText) {
+            $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
+            $recordedByText = 'Bsn.Host'
+            if ($owningModule -and $owningModule.Version) {
+                $recordedByText = 'Bsn.Host {0}' -f $owningModule.Version
+            }
         }
 
         $transcriptLines = [System.Collections.Generic.List[string]]::new()
         $transcriptLines.Add($separator)
         $transcriptLines.Add('PowerShell transcript start')
         $transcriptLines.Add('Start time: ' + $startTimeText)
-        $transcriptLines.Add('Username: ' + $Username)
+        $transcriptLines.Add('Username: ' + $usernameText)
         $transcriptLines.Add('RunAs User: ' + $RunAsUser)
-        $transcriptLines.Add('Machine: ' + $Machine)
+        $transcriptLines.Add('Machine: ' + $machineText)
         $transcriptLines.Add('Host Application: ' + $hostApplicationText)
-        $transcriptLines.Add('Process ID: ' + $ProcessId)
-        $transcriptLines.Add('PSVersion: ' + $PSVersion)
-        $transcriptLines.Add('PSEdition: ' + $Edition)
+        $transcriptLines.Add('Process ID: ' + $processIdText)
+        $transcriptLines.Add('PSVersion: ' + $psVersionText)
+        $transcriptLines.Add('PSEdition: ' + $psEditionText)
 
         if ($HeaderMode -eq [BsnTranscriptHeaderMode]::Bsn) {
             $transcriptLines.Add('Session Id: ' + $sessionIdText)

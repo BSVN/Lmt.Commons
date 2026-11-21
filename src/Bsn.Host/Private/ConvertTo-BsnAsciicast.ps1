@@ -42,7 +42,11 @@ function ConvertTo-BsnAsciicast {
     [ValidateSet(2, 3)]
     [int]$CastVersion = 2,
 
-    [int]$ExitCode = 0
+    [int]$ExitCode = 0,
+
+    # Pre-serialized JSON object written under the cast header's "bsn" key
+    # (the capture-time audit metadata block). Omitted for ecosystem casts.
+    [string]$HeaderMetadata = ''
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
@@ -104,13 +108,22 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
+        # Capture-time audit metadata (the "bsn" header block): the caller
+        # passes a pre-serialized JSON object. Guard the shape (an object
+        # literal, nothing else) so a malformed value can never corrupt the
+        # header - it is simply omitted instead.
+        $metadataFragment = ''
+        $trimmedMetadata = $HeaderMetadata.Trim()
+        if ($trimmedMetadata.StartsWith('{') -and $trimmedMetadata.EndsWith('}')) {
+            $metadataFragment = ', "bsn": ' + $trimmedMetadata
+        }
         if ($CastVersion -eq 3) {
-            $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
-                    $Width, $Height, $timestamp, $ShellName))
+            $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `
+                    $Width, $Height, $timestamp, $ShellName, $metadataFragment))
         }
         else {
-            $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}}}' -f `
-                    $Width, $Height, $timestamp, $ShellName))
+            $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `
+                    $Width, $Height, $timestamp, $ShellName, $metadataFragment))
         }
 
         $previousTime = 0.0

@@ -209,8 +209,11 @@ namespace Bsn.Host.Interop
         /// recording to castPath (asciicast v2 or v3 depending on castVersion). When
         /// stopFilePath is non-empty, creating that file terminates the recorded process
         /// and finalizes the recording (the Stop-InteractiveTranscript signaling channel).
+        /// headerMetadata is an optional pre-serialized JSON object (already escaped by
+        /// the PowerShell caller) written under the header's "bsn" key - the capture-time
+        /// audit metadata block (session id, recorded-by, host, user, pid, PS version).
         /// </summary>
-        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion)
+        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion, string headerMetadata)
         {
             IntPtr hRealIn = GetStdHandle(STD_INPUT_HANDLE);
             IntPtr hRealOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -297,7 +300,7 @@ namespace Bsn.Host.Interop
                 startupInfo.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
                 startupInfo.lpAttributeList = attributeList;
 
-                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion);
+                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion, headerMetadata);
 
                 // Raw VT input so keystrokes (including escape sequences for TUI apps) pass through.
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, ENABLE_VIRTUAL_TERMINAL_INPUT); }
@@ -471,7 +474,9 @@ namespace Bsn.Host.Interop
         // sequences that span read boundaries are filtered correctly.
         private readonly TerminalQueryFilter outputQueryFilter = new TerminalQueryFilter();
 
-        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
+        private string headerMetadata;
+
+        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion, string headerMetadata)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
@@ -480,6 +485,7 @@ namespace Bsn.Host.Interop
             // data - a 0-byte cast or truncated final event (issue #6).
             writer.AutoFlush = true;
             this.castVersion = castVersion;
+            this.headerMetadata = headerMetadata;
             previousElapsed = 0.0;
             // Persistent decoders: handle multi-byte UTF-8 sequences that span
             // chunk boundaries without corrupting them to U+FFFD (issue #5).
@@ -491,6 +497,16 @@ namespace Bsn.Host.Interop
             {
                 title = title + " (input captured)";
             }
+            // Capture-time audit metadata (the "bsn" header block): the PowerShell
+            // caller passes a pre-serialized JSON object. Guard the shape (an
+            // object literal, nothing else) so a malformed value can never corrupt
+            // the header - it is simply omitted instead.
+            string metadataFragment = string.Empty;
+            string trimmedMetadata = (headerMetadata ?? string.Empty).Trim();
+            if (trimmedMetadata.StartsWith("{") && trimmedMetadata.EndsWith("}"))
+            {
+                metadataFragment = ", \"bsn\": " + trimmedMetadata;
+            }
             if (castVersion == 3)
             {
                 // asciicast v3 header: version + term{cols,rows} are required.
@@ -500,7 +516,8 @@ namespace Bsn.Host.Interop
                     + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
                     + ", \"command\": \"" + Escape(shellName) + "\""
                     + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
+                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
+                    + metadataFragment + "}");
             }
             else
             {
@@ -508,7 +525,8 @@ namespace Bsn.Host.Interop
                     + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
                     + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
                     + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
+                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
+                    + metadataFragment + "}");
             }
         }
 

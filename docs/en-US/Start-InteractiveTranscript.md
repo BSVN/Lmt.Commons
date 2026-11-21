@@ -82,6 +82,29 @@ events. `-RecordInput` records keystrokes as `i` events (off by default -
 it can capture secrets; the fact is noted in the cast header; Windows only
 this release).
 
+## Capture-time audit metadata
+
+Every recording stamps the session context into the cast header at
+capture time, under a `bsn` key: a GUID `session_id` minted when the
+recording starts, the `recorded_by` module version, `host`, `user`,
+`pid`, and the recording PowerShell's `psversion`/`psedition`. The
+asciicast spec treats unknown header keys as ignorable, so such casts
+remain fully ecosystem-compatible (`asciinema` plays them untouched).
+Downstream consumers derive the session context from the recording:
+[ConvertTo-BsnTranscript](ConvertTo-BsnTranscript.md) fills the
+Start-Transcript header fields automatically, and
+[Export-BsnAuditLog](Export-BsnAuditLog.md) /
+[ConvertTo-BsnAuditRecord](ConvertTo-BsnAuditRecord.md) fill their
+records' session block - no more blank `who/where` fields or manual
+parameters.
+
+On Windows the console output encoding is temporarily switched to UTF-8
+for the duration of the recording and restored afterwards (same restore
+discipline as the live proxy view - issue #5); the recorded command or
+shell runs inside a pseudo-terminal; everything inside it is captured.
+
+## Console codepage behavior
+
 On Windows the recorded session runs under a UTF-8 console codepage (the
 programmatic `chcp 65001` via `[Console]::OutputEncoding`/`InputEncoding`),
 and the engine temporarily switches the calling console's output codepage
