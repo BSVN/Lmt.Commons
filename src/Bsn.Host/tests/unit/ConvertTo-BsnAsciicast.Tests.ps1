@@ -13,6 +13,22 @@ BeforeAll {
     catch [System.IO.FileLoadException] {
         Import-Module -Name (Join-Path $moduleRoot 'Bsn.Host.psm1') -Force -ErrorAction 'Stop'
     }
+
+    # What Start-InteractiveTranscript gathers for a recording, as the one
+    # object the engine wrappers and the cast writer take. A class defined
+    # in a module cannot be named by a bare type literal from test scope,
+    # so the object is created in the module's own scope.
+    $script:FullMetadata = & (Get-Module -Name 'Bsn.Host') {
+        [BsnAuditMetadata]@{
+            SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+            RecordedBy = 'bsn.host 0.3.0'
+            ComputerName = 'ws01'
+            UserName = 'jdoe'
+            ProcessId = 4242
+            PSVersion = '7.6.9'
+            Edition = 'Core'
+        }
+    }
 }
 
 Describe 'ConvertTo-BsnAsciicast' {
@@ -183,18 +199,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            # The fields Start-InteractiveTranscript gathers, under the
-            # parameter names shared by both engines and the audit export.
-            $metadata = @{
-                SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
-                RecordedBy = 'bsn.host 0.3.0'
-                ComputerName = 'ws01'
-                UserName = 'jdoe'
-                ProcessId = 4242
-                PSVersion = '7.6.9'
-                Edition = 'Core'
-            }
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $fields) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c @fields } $outputPath $timingPath $castPath $metadata
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $script:FullMetadata
 
             $headerLine = Get-Content -LiteralPath $castPath -TotalCount 1
             $header = $headerLine | ConvertFrom-Json
@@ -218,7 +223,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -SessionId '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8' -ComputerName 'ws01' -UserName 'jdoe' } $outputPath $timingPath $castPath
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -AuditMetadata $metadata } $outputPath $timingPath $castPath $script:FullMetadata
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 3
@@ -227,7 +232,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             $header.bsn.user | Should -Be 'jdoe'
         }
 
-        It 'omits the bsn block when no metadata is supplied' {
+        It 'omits the bsn block when no metadata object is supplied' {
             $outputPath = Join-Path -Path $TestDrive -ChildPath 'nometa.log'
             $timingPath = Join-Path -Path $TestDrive -ChildPath 'nometa.timing'
             $castPath = Join-Path -Path $TestDrive -ChildPath 'nometa.cast'
@@ -240,14 +245,30 @@ Describe 'ConvertTo-BsnAsciicast' {
             $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
         }
 
-        It 'writes only the metadata fields that were supplied' {
+        It 'omits the bsn block when the metadata object carries no values' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'empty.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'empty.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'empty.cast'
+            Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
+            Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
+
+            $emptyMetadata = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]::new() }
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $emptyMetadata
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header.version | Should -Be 2
+            $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
+        }
+
+        It 'writes only the metadata fields the object carries' {
             $outputPath = Join-Path -Path $TestDrive -ChildPath 'partial.log'
             $timingPath = Join-Path -Path $TestDrive -ChildPath 'partial.timing'
             $castPath = Join-Path -Path $TestDrive -ChildPath 'partial.cast'
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -SessionId 'gid' -UserName 'jdoe' } $outputPath $timingPath $castPath
+            $partialMetadata = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]@{ SessionId = 'gid'; UserName = 'jdoe' } }
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $partialMetadata
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 2
@@ -302,22 +323,21 @@ Describe 'ConvertTo-BsnAsciicast' {
     }
 }
 
-Describe 'ConvertTo-BsnCastHeaderBlock' {
+Describe 'BsnAuditMetadata.ToHeaderJson' {
     # The single definition of the bsn header block's shape: both engines
-    # build the block through this helper.
-    It 'returns an empty string when no field is supplied (block omitted)' {
-        $result = & (Get-Module -Name 'Bsn.Host') { ConvertTo-BsnCastHeaderBlock }
-        $result | Should -Be ''
+    # write the block from this method. Instances are created in the
+    # module's scope (see BeforeAll); their members are usable from here.
+    It 'returns an empty string for an object that carries no values' {
+        $empty = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]::new() }
+        $empty.ToHeaderJson() | Should -Be ''
     }
 
-    It 'serializes every supplied field under the block keys in a stable order' {
-        $result = & (Get-Module -Name 'Bsn.Host') {
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -RecordedBy 'bsn.host 0.3.0' -ComputerName 'ws01' -UserName 'jdoe' -ProcessId 4242 -PSVersion '7.6.9' -Edition 'Core'
-        }
+    It 'serializes every field under the block keys in a stable order' {
+        $result = $script:FullMetadata.ToHeaderJson()
 
         $block = $result | ConvertFrom-Json
         (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,recorded_by,host,user,pid,psversion,psedition'
-        $block.session_id | Should -Be 'guid-1'
+        $block.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
         $block.recorded_by | Should -Be 'bsn.host 0.3.0'
         $block.host | Should -Be 'ws01'
         $block.user | Should -Be 'jdoe'
@@ -328,21 +348,20 @@ Describe 'ConvertTo-BsnCastHeaderBlock' {
     }
 
     It 'omits fields left empty' {
-        $result = & (Get-Module -Name 'Bsn.Host') {
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -ComputerName 'ws01' -ProcessId 0
-        }
+        $partial = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]@{ SessionId = 'guid-1'; ComputerName = 'ws01' } }
 
-        $block = $result | ConvertFrom-Json
+        $block = $partial.ToHeaderJson() | ConvertFrom-Json
         (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,host'
     }
 
     It 'escapes values, keeping the result a single line of valid JSON' {
         $awkwardValue = 'Do"e\J' + [char]10 + 'x'
-        $result = & (Get-Module -Name 'Bsn.Host') {
+        $metadata = & (Get-Module -Name 'Bsn.Host') {
             param($value)
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -UserName $value
+            [BsnAuditMetadata]@{ SessionId = 'guid-1'; UserName = $value }
         } $awkwardValue
 
+        $result = $metadata.ToHeaderJson()
         $result.Contains([string][char]10) | Should -BeFalse -Because 'the value is spliced into the single header line'
         $block = $result | ConvertFrom-Json
         $block.user | Should -Be $awkwardValue

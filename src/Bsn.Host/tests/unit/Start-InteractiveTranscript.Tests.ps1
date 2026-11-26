@@ -23,13 +23,13 @@ BeforeAll {
     $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
 
     # Shared assertion for the capture-metadata tests: a mocked engine
-    # wrapper must have received the bsn header block's fields under the
-    # same names on both engines, holding the real session context. The
-    # wrapper mock stores what it was called with in $script:CapturedMetadata.
+    # wrapper must have received the recording's BsnAuditMetadata object,
+    # holding the real session context in every field. The wrapper mock
+    # stores the object it was called with in $script:CapturedMetadata.
     $script:AssertCaptureMetadata = {
         $captured = $script:CapturedMetadata
-        $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the capture metadata'
-        ((@($captured.Keys) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
+        $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the audit metadata object'
+        ((@($captured.PSObject.Properties.Name) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
         Should -Actual $captured.UserName -Be ([Environment]::UserName)
         Should -Actual $captured.ComputerName -Be ([System.Net.Dns]::GetHostName())
         Should -Actual $captured.ProcessId -Be $PID
@@ -119,19 +119,11 @@ Describe 'Start-InteractiveTranscript' {
             Should -Invoke -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $Command -eq 'htop' }
         }
 
-        It 'threads the capture metadata to the Windows engine as named fields' {
+        It 'hands the audit metadata object to the Windows engine' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             $script:CapturedMetadata = $null
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                $script:CapturedMetadata = @{
-                    SessionId    = $SessionId
-                    RecordedBy   = $RecordedBy
-                    ComputerName = $ComputerName
-                    UserName     = $UserName
-                    ProcessId    = $ProcessId
-                    PSVersion    = $PSVersion
-                    Edition      = $Edition
-                }
+                $script:CapturedMetadata = $AuditMetadata
                 [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
 
@@ -140,19 +132,11 @@ Describe 'Start-InteractiveTranscript' {
             & $script:AssertCaptureMetadata
         }
 
-        It 'threads the same capture metadata to the Unix engine' {
+        It 'hands the same audit metadata object to the Unix engine' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Linux' }
             $script:CapturedMetadata = $null
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
-                $script:CapturedMetadata = @{
-                    SessionId    = $SessionId
-                    RecordedBy   = $RecordedBy
-                    ComputerName = $ComputerName
-                    UserName     = $UserName
-                    ProcessId    = $ProcessId
-                    PSVersion    = $PSVersion
-                    Edition      = $Edition
-                }
+                $script:CapturedMetadata = $AuditMetadata
                 [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
 
@@ -165,7 +149,7 @@ Describe 'Start-InteractiveTranscript' {
             Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
             $script:CapturedSessionIds = [System.Collections.Generic.List[string]]::new()
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
-                $script:CapturedSessionIds.Add($SessionId)
+                $script:CapturedSessionIds.Add($AuditMetadata.SessionId)
                 [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
 

@@ -1269,7 +1269,7 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
 
     Context 'capture-time audit metadata (the bsn header block)' {
         It 'stamps the session context into the header of a real recording on the current engine' {
-            # Both engines build the block through ConvertTo-BsnCastHeaderBlock,
+            # Both engines write the block from the same BsnAuditMetadata object,
             # but only a real recording exercises each engine's own path:
             # the ConPTY CastWriter (compiled code) on Windows, the script(1)
             # conversion on Unix.

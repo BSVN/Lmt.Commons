@@ -18,10 +18,8 @@
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
 
-    The audit metadata parameters (-SessionId, -RecordedBy, -ComputerName,
-    -UserName, -ProcessId, -PSVersion, -Edition) take the same names here
-    as on the Windows engine; see ConvertTo-BsnCastHeaderBlock for what
-    each one means.
+    -AuditMetadata is the recording's capture-time audit metadata. It is
+    passed on to the cast header's "bsn" block; see BsnAuditMetadata.
 
 .PARAMETER Command
     Command to record. Omit it to record the default interactive shell.
@@ -44,26 +42,10 @@
 .PARAMETER CastVersion
     Asciicast format to write: 2 (default) or 3.
 
-.PARAMETER SessionId
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER RecordedBy
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER ComputerName
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER UserName
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER ProcessId
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER PSVersion
-    Audit metadata, written into the header's "bsn" block.
-
-.PARAMETER Edition
-    Audit metadata, written into the header's "bsn" block.
+.PARAMETER AuditMetadata
+    Capture-time audit metadata for the cast header's "bsn" block, as a
+    BsnAuditMetadata object; Start-InteractiveTranscript creates one per
+    recording. Omit it to leave the block out.
 #>
 function Start-BsnUnixPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
@@ -83,20 +65,8 @@ function Start-BsnUnixPtyRecording {
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
 
-        # Audit metadata, written into the header's "bsn" block.
-        [string]$SessionId = '',
-
-        [string]$RecordedBy = '',
-
-        [string]$ComputerName = '',
-
-        [string]$UserName = '',
-
-        [int]$ProcessId = 0,
-
-        [string]$PSVersion = '',
-
-        [string]$Edition = ''
+        # Capture-time audit metadata, written into the header's "bsn" block.
+        [BsnAuditMetadata]$AuditMetadata
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -184,22 +154,12 @@ function Start-BsnUnixPtyRecording {
         }
         $stopwatch.Stop()
 
-        # The converter owns the header: pass the capture metadata through
-        # under the same names it exposes.
-        $metadataParameters = @{
-            SessionId    = $SessionId
-            RecordedBy   = $RecordedBy
-            ComputerName = $ComputerName
-            UserName     = $UserName
-            ProcessId    = $ProcessId
-            PSVersion    = $PSVersion
-            Edition      = $Edition
-        }
+        # The converter owns the header, so the audit metadata is passed to it as-is.
         if ($supportsTiming) {
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode @metadataParameters
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -AuditMetadata $AuditMetadata
         }
         else {
-            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode @metadataParameters
+            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -AuditMetadata $AuditMetadata
         }
     }
     finally {

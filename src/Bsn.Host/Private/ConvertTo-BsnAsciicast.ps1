@@ -18,13 +18,12 @@
     The file is written as UTF-8 without BOM with LF line endings, matching
     the asciicast specification. All number formatting is culture-invariant.
 
-    The optional audit metadata parameters (-SessionId, -RecordedBy,
-    -ComputerName, -UserName, -ProcessId, -PSVersion, -Edition) are
-    written into the header's "bsn" block. Their names follow the module's
-    audit export cmdlets (ConvertTo-BsnAuditRecord, Export-BsnAuditLog).
-    ConvertTo-BsnCastHeaderBlock defines the block's shape for both
-    recording engines and documents which block key each field fills.
-    The block is omitted entirely when no metadata field is supplied.
+    -AuditMetadata carries the capture-time audit metadata as one
+    BsnAuditMetadata object and is written into the header's "bsn" block.
+    The object's ToHeaderJson() method is the single definition of the
+    block's shape for both recording engines and documents which block
+    key each field fills. The block is omitted when no object is passed
+    or the object carries no values.
 
     Parameters are listed below in the order the parts are written: the
     recorded stream, the cast file, the header fields, then the exit
@@ -60,29 +59,13 @@
 .PARAMETER CastVersion
     Asciicast format to write: 2 (default) or 3.
 
-.PARAMETER SessionId
-    Audit metadata: GUID identifying the recorded session.
-
-.PARAMETER RecordedBy
-    Audit metadata: module that made the recording, for example
-    'bsn.host 0.3.0'.
-
-.PARAMETER ComputerName
-    Audit metadata: machine the recorded session ran on.
-
-.PARAMETER UserName
-    Audit metadata: account that started the recording.
-
-.PARAMETER ProcessId
-    Audit metadata: process id of the PowerShell that made the recording.
-    Zero (the default) omits the field.
-
-.PARAMETER PSVersion
-    Audit metadata: version of the PowerShell that made the recording.
-
-.PARAMETER Edition
-    Audit metadata: edition of the PowerShell that made the recording
-    ('Core' or 'Desktop').
+.PARAMETER AuditMetadata
+    Capture-time audit metadata for the header's "bsn" block, as a
+    BsnAuditMetadata object: the recorded session (GUID), the module that
+    made the recording, the computer, the user, the process id and the
+    version and edition of the PowerShell that made the recording.
+    Start-InteractiveTranscript creates one per recording. Omit it to
+    leave the block out.
 
 .PARAMETER ExitCode
     Exit status of the recorded command. Written as the trailing 'x'
@@ -116,20 +99,8 @@ function ConvertTo-BsnAsciicast {
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
 
-        # Audit metadata, written into the header's "bsn" block.
-        [string]$SessionId = '',
-
-        [string]$RecordedBy = '',
-
-        [string]$ComputerName = '',
-
-        [string]$UserName = '',
-
-        [int]$ProcessId = 0,
-
-        [string]$PSVersion = '',
-
-        [string]$Edition = '',
+        # Capture-time audit metadata, written into the header's "bsn" block.
+        [BsnAuditMetadata]$AuditMetadata,
 
         [int]$ExitCode = 0
     )
@@ -193,15 +164,15 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
-        # Capture-time audit metadata (the "bsn" header block). The helper
-        # owns the block's shape and returns a well-formed JSON object, or
-        # an empty string when no field was supplied (block omitted).
-        $metadataJson = ConvertTo-BsnCastHeaderBlock `
-            -SessionId $SessionId -RecordedBy $RecordedBy -ComputerName $ComputerName -UserName $UserName `
-            -ProcessId $ProcessId -PSVersion $PSVersion -Edition $Edition
+        # Capture-time audit metadata (the "bsn" header block). The object
+        # serializes itself and owns the block's shape: an empty result
+        # (no object, or one that carries no values) leaves the block out.
         $metadataFragment = ''
-        if ($metadataJson) {
-            $metadataFragment = ', "bsn": ' + $metadataJson
+        if ($AuditMetadata) {
+            $metadataJson = $AuditMetadata.ToHeaderJson()
+            if ($metadataJson) {
+                $metadataFragment = ', "bsn": ' + $metadataJson
+            }
         }
         if ($CastVersion -eq 3) {
             $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `
