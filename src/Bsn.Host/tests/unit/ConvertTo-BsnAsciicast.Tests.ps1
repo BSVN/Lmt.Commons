@@ -1,4 +1,7 @@
-﻿BeforeAll {
+﻿[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingComputerNameHardcoded', '', Justification = 'Test fixtures use a synthetic computer name.')]
+param()
+
+BeforeAll {
     $moduleRoot = Split-Path -Parent -Path (Split-Path -Parent -Path $PSScriptRoot)
     $manifestPath = Join-Path -Path $moduleRoot -ChildPath 'Bsn.Host.psd1'
     # The module's DLL may already be loaded in this process (e.g., by PSScriptAnalyzer
@@ -181,12 +184,12 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
             # The fields Start-InteractiveTranscript gathers, under the
-            # parameter names shared by both engines and the reader.
+            # parameter names shared by both engines and the audit export.
             $metadata = @{
                 SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
                 RecordedBy = 'bsn.host 0.3.0'
-                Machine = 'ws01'
-                Username = 'jdoe'
+                ComputerName = 'ws01'
+                UserName = 'jdoe'
                 ProcessId = 4242
                 PSVersion = '7.6.9'
                 Edition = 'Core'
@@ -215,7 +218,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -SessionId '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8' -Machine 'ws01' -Username 'jdoe' } $outputPath $timingPath $castPath
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -SessionId '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8' -ComputerName 'ws01' -UserName 'jdoe' } $outputPath $timingPath $castPath
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 3
@@ -244,7 +247,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -SessionId 'gid' -Username 'jdoe' } $outputPath $timingPath $castPath
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -SessionId 'gid' -UserName 'jdoe' } $outputPath $timingPath $castPath
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 2
@@ -309,7 +312,7 @@ Describe 'ConvertTo-BsnCastHeaderBlock' {
 
     It 'serializes every supplied field under the block keys in a stable order' {
         $result = & (Get-Module -Name 'Bsn.Host') {
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -RecordedBy 'bsn.host 0.3.0' -Machine 'ws01' -Username 'jdoe' -ProcessId 4242 -PSVersion '7.6.9' -Edition 'Core'
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -RecordedBy 'bsn.host 0.3.0' -ComputerName 'ws01' -UserName 'jdoe' -ProcessId 4242 -PSVersion '7.6.9' -Edition 'Core'
         }
 
         $block = $result | ConvertFrom-Json
@@ -326,7 +329,7 @@ Describe 'ConvertTo-BsnCastHeaderBlock' {
 
     It 'omits fields left empty' {
         $result = & (Get-Module -Name 'Bsn.Host') {
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -Machine 'ws01' -ProcessId 0
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -ComputerName 'ws01' -ProcessId 0
         }
 
         $block = $result | ConvertFrom-Json
@@ -337,7 +340,7 @@ Describe 'ConvertTo-BsnCastHeaderBlock' {
         $awkwardValue = 'Do"e\J' + [char]10 + 'x'
         $result = & (Get-Module -Name 'Bsn.Host') {
             param($value)
-            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -Username $value
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -UserName $value
         } $awkwardValue
 
         $result.Contains([string][char]10) | Should -BeFalse -Because 'the value is spliced into the single header line'

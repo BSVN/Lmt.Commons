@@ -18,13 +18,79 @@
     The file is written as UTF-8 without BOM with LF line endings, matching
     the asciicast specification. All number formatting is culture-invariant.
 
-    The optional capture-time audit metadata parameters (-SessionId,
-    -RecordedBy, -Machine, -Username, -ProcessId, -PSVersion, -Edition)
-    are written into the header's "bsn" block. Their names mirror the
-    fields ConvertTo-BsnTranscript reads back from that block, and the
-    block's shape is defined once in ConvertTo-BsnCastHeaderBlock so
-    both recording engines emit identical keys. The block is omitted
-    entirely when no metadata field is supplied.
+    The optional audit metadata parameters (-SessionId, -RecordedBy,
+    -ComputerName, -UserName, -ProcessId, -PSVersion, -Edition) are
+    written into the header's "bsn" block. Their names follow the module's
+    audit export cmdlets (ConvertTo-BsnAuditRecord, Export-BsnAuditLog).
+    ConvertTo-BsnCastHeaderBlock defines the block's shape for both
+    recording engines and documents which block key each field fills.
+    The block is omitted entirely when no metadata field is supplied.
+
+    Parameters are listed below in the order the parts are written: the
+    recorded stream, the cast file, the header fields, then the exit
+    status, which is the last event of a cast.
+
+.PARAMETER OutputPath
+    Path of the raw captured output that becomes the cast's 'o' events:
+    the script(1) --log-out stream or typescript file.
+
+.PARAMETER TimingPath
+    Path of the util-linux script(1) --log-timing log: one
+    '<+delta seconds> <byte count>' entry per output chunk. Timing
+    parameter set only; produces timing-exact events.
+
+.PARAMETER DurationSec
+    Measured duration of the session in seconds. Approximated parameter
+    set only: with no timing log, line events are spread evenly across
+    this duration.
+
+.PARAMETER CastPath
+    Path of the asciicast file to write. An existing file is overwritten.
+
+.PARAMETER Width
+    Terminal width in columns, recorded in the header. Default 80.
+
+.PARAMETER Height
+    Terminal height in rows, recorded in the header. Default 24.
+
+.PARAMETER ShellName
+    Name of the recorded command or shell, recorded in the header as
+    env.SHELL and, in a v3 header, as "command". Default 'shell'.
+
+.PARAMETER CastVersion
+    Asciicast format to write: 2 (default) or 3.
+
+.PARAMETER SessionId
+    Audit metadata: GUID identifying the recorded session.
+
+.PARAMETER RecordedBy
+    Audit metadata: module that made the recording, for example
+    'bsn.host 0.3.0'.
+
+.PARAMETER ComputerName
+    Audit metadata: machine the recorded session ran on.
+
+.PARAMETER UserName
+    Audit metadata: account that started the recording.
+
+.PARAMETER ProcessId
+    Audit metadata: process id of the PowerShell that made the recording.
+    Zero (the default) omits the field.
+
+.PARAMETER PSVersion
+    Audit metadata: version of the PowerShell that made the recording.
+
+.PARAMETER Edition
+    Audit metadata: edition of the PowerShell that made the recording
+    ('Core' or 'Desktop').
+
+.PARAMETER ExitCode
+    Exit status of the recorded command. Written as the trailing 'x'
+    event that finalizes a v3 cast; not written in a v2 cast.
+
+.OUTPUTS
+    None
+        The function writes the cast file and returns nothing.
 #>
 function ConvertTo-BsnAsciicast {
     [CmdletBinding(DefaultParameterSetName = 'Timing')]
@@ -47,25 +113,25 @@ function ConvertTo-BsnAsciicast {
 
         [string]$ShellName = 'shell',
 
-    [ValidateSet(2, 3)]
-    [int]$CastVersion = 2,
+        [ValidateSet(2, 3)]
+        [int]$CastVersion = 2,
 
-    [int]$ExitCode = 0,
-
-        # Capture-time audit metadata (the cast header's "bsn" block).
+        # Audit metadata, written into the header's "bsn" block.
         [string]$SessionId = '',
 
         [string]$RecordedBy = '',
 
-        [string]$Machine = '',
+        [string]$ComputerName = '',
 
-        [string]$Username = '',
+        [string]$UserName = '',
 
         [int]$ProcessId = 0,
 
         [string]$PSVersion = '',
 
-        [string]$Edition = ''
+        [string]$Edition = '',
+
+        [int]$ExitCode = 0
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
@@ -131,7 +197,7 @@ function ConvertTo-BsnAsciicast {
         # owns the block's shape and returns a well-formed JSON object, or
         # an empty string when no field was supplied (block omitted).
         $metadataJson = ConvertTo-BsnCastHeaderBlock `
-            -SessionId $SessionId -RecordedBy $RecordedBy -Machine $Machine -Username $Username `
+            -SessionId $SessionId -RecordedBy $RecordedBy -ComputerName $ComputerName -UserName $UserName `
             -ProcessId $ProcessId -PSVersion $PSVersion -Edition $Edition
         $metadataFragment = ''
         if ($metadataJson) {

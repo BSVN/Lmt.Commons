@@ -221,23 +221,23 @@ function Start-InteractiveTranscript {
         # downstream audit artifacts share one stable identity.
         #
         # The values are gathered here, once, and splatted into either
-        # engine wrapper as named parameters (the same names the readers
-        # of the block expose).
+        # engine wrapper as named parameters, named like the audit export's
+        # session context (ConvertTo-BsnAuditRecord, Export-BsnAuditLog).
         $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
         $recordedBy = 'bsn.host'
         if ($owningModule -and $owningModule.Version) {
             $recordedBy = 'bsn.host {0}' -f $owningModule.Version
         }
         $captureMetadata = @{
-            SessionId = [guid]::NewGuid().ToString()
-            RecordedBy = $recordedBy
-            Machine = [System.Net.Dns]::GetHostName()
-            Username = [Environment]::UserName
-            ProcessId = $PID
-            PSVersion = $PSVersionTable.PSVersion.ToString()
-            Edition = [string]$PSVersionTable.PSEdition
+            SessionId    = [guid]::NewGuid().ToString()
+            RecordedBy   = $recordedBy
+            ComputerName = [System.Net.Dns]::GetHostName()
+            UserName     = [Environment]::UserName
+            ProcessId    = $PID
+            PSVersion    = $PSVersionTable.PSVersion.ToString()
+            Edition      = [string]$PSVersionTable.PSEdition
         }
-        Write-Verbose -Message ('Recording audit metadata: session {0} on {1} as {2}' -f $captureMetadata.SessionId, $captureMetadata.Machine, $captureMetadata.Username)
+        Write-Verbose -Message ('Recording audit metadata: session {0} on {1} as {2}' -f $captureMetadata.SessionId, $captureMetadata.ComputerName, $captureMetadata.UserName)
 
         # Stop signaling channel: Stop-InteractiveTranscript (running inside the recorded
         # session) creates this file; the recording engine finalizes and returns.

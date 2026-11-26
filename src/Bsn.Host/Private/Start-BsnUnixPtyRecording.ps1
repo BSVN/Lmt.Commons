@@ -18,17 +18,59 @@
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
 
-    The capture-time audit metadata parameters (-SessionId, -RecordedBy,
-    -Machine, -Username, -ProcessId, -PSVersion, -Edition) are passed to
-    ConvertTo-BsnAsciicast, which writes them into the cast header's
-    "bsn" block. They take the same names here as on the Windows engine
-    and on ConvertTo-BsnTranscript, which reads the block back.
+    The audit metadata parameters (-SessionId, -RecordedBy, -ComputerName,
+    -UserName, -ProcessId, -PSVersion, -Edition) take the same names here
+    as on the Windows engine; see ConvertTo-BsnCastHeaderBlock for what
+    each one means.
+
+.PARAMETER Command
+    Command to record. Omit it to record the default interactive shell.
+
+.PARAMETER CastPath
+    Path of the cast file to write.
+
+.PARAMETER RecordInput
+    Requested input recording. Not supported on Unix: a warning is
+    emitted and only terminal output is recorded.
+
+.PARAMETER ShellName
+    Name of the recorded command or shell, recorded in the header as
+    env.SHELL and, in a v3 header, as "command". Default 'shell'.
+
+.PARAMETER StopFilePath
+    When set, creating this file ends the recording. It is the channel
+    Stop-InteractiveTranscript uses from inside the recorded session.
+
+.PARAMETER CastVersion
+    Asciicast format to write: 2 (default) or 3.
+
+.PARAMETER SessionId
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER RecordedBy
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER ComputerName
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER UserName
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER ProcessId
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER PSVersion
+    Audit metadata, written into the header's "bsn" block.
+
+.PARAMETER Edition
+    Audit metadata, written into the header's "bsn" block.
 #>
 function Start-BsnUnixPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
     [CmdletBinding()]
     param(
         [string]$Command,
+
         [Parameter(Mandatory = $true)]
         [string]$CastPath,
 
@@ -41,14 +83,14 @@ function Start-BsnUnixPtyRecording {
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
 
-        # Capture-time audit metadata (the cast header's "bsn" block).
+        # Audit metadata, written into the header's "bsn" block.
         [string]$SessionId = '',
 
         [string]$RecordedBy = '',
 
-        [string]$Machine = '',
+        [string]$ComputerName = '',
 
-        [string]$Username = '',
+        [string]$UserName = '',
 
         [int]$ProcessId = 0,
 
@@ -145,13 +187,13 @@ function Start-BsnUnixPtyRecording {
         # The converter owns the header: pass the capture metadata through
         # under the same names it exposes.
         $metadataParameters = @{
-            SessionId = $SessionId
-            RecordedBy = $RecordedBy
-            Machine    = $Machine
-            Username   = $Username
-            ProcessId  = $ProcessId
-            PSVersion  = $PSVersion
-            Edition    = $Edition
+            SessionId    = $SessionId
+            RecordedBy   = $RecordedBy
+            ComputerName = $ComputerName
+            UserName     = $UserName
+            ProcessId    = $ProcessId
+            PSVersion    = $PSVersion
+            Edition      = $Edition
         }
         if ($supportsTiming) {
             ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode @metadataParameters

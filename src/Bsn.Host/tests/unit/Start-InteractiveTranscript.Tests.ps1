@@ -29,9 +29,9 @@ BeforeAll {
     $script:AssertCaptureMetadata = {
         $captured = $script:CapturedMetadata
         $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the capture metadata'
-        ((@($captured.Keys) | Sort-Object) -join ',') | Should -Be 'Edition,Machine,ProcessId,PSVersion,RecordedBy,SessionId,Username'
-        Should -Actual $captured.Username -Be ([Environment]::UserName)
-        Should -Actual $captured.Machine -Be ([System.Net.Dns]::GetHostName())
+        ((@($captured.Keys) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
+        Should -Actual $captured.UserName -Be ([Environment]::UserName)
+        Should -Actual $captured.ComputerName -Be ([System.Net.Dns]::GetHostName())
         Should -Actual $captured.ProcessId -Be $PID
         Should -Actual $captured.PSVersion -Be $PSVersionTable.PSVersion.ToString()
         Should -Actual $captured.Edition -Be $PSVersionTable.PSEdition
@@ -124,13 +124,13 @@ Describe 'Start-InteractiveTranscript' {
             $script:CapturedMetadata = $null
             Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
                 $script:CapturedMetadata = @{
-                    SessionId  = $SessionId
-                    RecordedBy = $RecordedBy
-                    Machine    = $Machine
-                    Username   = $Username
-                    ProcessId  = $ProcessId
-                    PSVersion  = $PSVersion
-                    Edition    = $Edition
+                    SessionId    = $SessionId
+                    RecordedBy   = $RecordedBy
+                    ComputerName = $ComputerName
+                    UserName     = $UserName
+                    ProcessId    = $ProcessId
+                    PSVersion    = $PSVersion
+                    Edition      = $Edition
                 }
                 [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
@@ -145,13 +145,13 @@ Describe 'Start-InteractiveTranscript' {
             $script:CapturedMetadata = $null
             Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
                 $script:CapturedMetadata = @{
-                    SessionId  = $SessionId
-                    RecordedBy = $RecordedBy
-                    Machine    = $Machine
-                    Username   = $Username
-                    ProcessId  = $ProcessId
-                    PSVersion  = $PSVersion
-                    Edition    = $Edition
+                    SessionId    = $SessionId
+                    RecordedBy   = $RecordedBy
+                    ComputerName = $ComputerName
+                    UserName     = $UserName
+                    ProcessId    = $ProcessId
+                    PSVersion    = $PSVersion
+                    Edition      = $Edition
                 }
                 [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
             }
