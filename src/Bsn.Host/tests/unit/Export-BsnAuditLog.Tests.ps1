@@ -186,7 +186,7 @@ Describe 'Export-BsnAuditLog -Target Transcript' {
         # normalize it away before comparing everything else byte-for-byte.
         $directPath = Join-Path -Path $TestDrive -ChildPath 'direct.txt'
         ConvertTo-BsnTranscript -Path $script:ExportCastPath -HeaderMode Bsn -OutPath $directPath `
-            -SessionId 'audit-42' -Username 'CONTOSO\jdoe' -Machine 'ws01'
+            -SessionId 'audit-42' -UserName 'CONTOSO\jdoe' -ComputerName 'ws01'
 
         $exportContent = [System.IO.File]::ReadAllText($outPath, [System.Text.Encoding]::UTF8)
         $directContent = [System.IO.File]::ReadAllText($directPath, [System.Text.Encoding]::UTF8)

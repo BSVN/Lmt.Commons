@@ -277,8 +277,8 @@ function Export-BsnAuditLog {
                 HeaderMode = 'Bsn'
             }
             if ($SessionId) { $transcriptParameters.SessionId = $SessionId }
-            if ($UserName) { $transcriptParameters.Username = $UserName }
-            if ($ComputerName) { $transcriptParameters.Machine = $ComputerName }
+            if ($UserName) { $transcriptParameters.UserName = $UserName }
+            if ($ComputerName) { $transcriptParameters.ComputerName = $ComputerName }
             ConvertTo-BsnTranscript @transcriptParameters
             return
         }
