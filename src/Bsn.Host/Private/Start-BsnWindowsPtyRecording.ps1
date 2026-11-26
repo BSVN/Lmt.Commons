@@ -16,6 +16,12 @@
 
     The engine requires Windows 10 1809+ (CreatePseudoConsole); the public
     cmdlet checks this before dispatching.
+
+    The capture-time audit metadata parameters (-SessionId, -RecordedBy,
+    -Machine, -Username, -ProcessId, -PSVersion, -Edition) are written
+    into the cast header's "bsn" block. They take the same names here as
+    on the Unix engine and on ConvertTo-BsnTranscript, which reads the
+    block back.
 #>
 function Start-BsnWindowsPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
@@ -36,10 +42,28 @@ function Start-BsnWindowsPtyRecording {
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
 
-        # Pre-serialized JSON object written under the cast header's "bsn"
-        # key (the capture-time audit metadata block).
-        [string]$HeaderMetadata = ''
+        # Capture-time audit metadata (the cast header's "bsn" block).
+        [string]$SessionId = '',
+
+        [string]$RecordedBy = '',
+
+        [string]$Machine = '',
+
+        [string]$Username = '',
+
+        [int]$ProcessId = 0,
+
+        [string]$PSVersion = '',
+
+        [string]$Edition = ''
     )
+
+    # The engine is compiled code, so the named fields cross the language
+    # boundary as one pre-serialized JSON value. The helper defines the
+    # block's shape; an empty result leaves the block out of the header.
+    $headerMetadata = ConvertTo-BsnCastHeaderBlock `
+        -SessionId $SessionId -RecordedBy $RecordedBy -Machine $Machine -Username $Username `
+        -ProcessId $ProcessId -PSVersion $PSVersion -Edition $Edition
 
     try {
         $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion, $HeaderMetadata)

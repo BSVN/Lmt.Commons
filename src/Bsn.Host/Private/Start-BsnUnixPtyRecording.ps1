@@ -17,6 +17,12 @@
 
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
+
+    The capture-time audit metadata parameters (-SessionId, -RecordedBy,
+    -Machine, -Username, -ProcessId, -PSVersion, -Edition) are passed to
+    ConvertTo-BsnAsciicast, which writes them into the cast header's
+    "bsn" block. They take the same names here as on the Windows engine
+    and on ConvertTo-BsnTranscript, which reads the block back.
 #>
 function Start-BsnUnixPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
@@ -35,9 +41,20 @@ function Start-BsnUnixPtyRecording {
         [ValidateSet(2, 3)]
         [int]$CastVersion = 2,
 
-        # Pre-serialized JSON object written under the cast header's "bsn"
-        # key (the capture-time audit metadata block).
-        [string]$HeaderMetadata = ''
+        # Capture-time audit metadata (the cast header's "bsn" block).
+        [string]$SessionId = '',
+
+        [string]$RecordedBy = '',
+
+        [string]$Machine = '',
+
+        [string]$Username = '',
+
+        [int]$ProcessId = 0,
+
+        [string]$PSVersion = '',
+
+        [string]$Edition = ''
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -125,11 +142,22 @@ function Start-BsnUnixPtyRecording {
         }
         $stopwatch.Stop()
 
+        # The converter owns the header: pass the capture metadata through
+        # under the same names it exposes.
+        $metadataParameters = @{
+            SessionId = $SessionId
+            RecordedBy = $RecordedBy
+            Machine    = $Machine
+            Username   = $Username
+            ProcessId  = $ProcessId
+            PSVersion  = $PSVersion
+            Edition    = $Edition
+        }
         if ($supportsTiming) {
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -HeaderMetadata $HeaderMetadata
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode @metadataParameters
         }
         else {
-            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -HeaderMetadata $HeaderMetadata
+            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode @metadataParameters
         }
     }
     finally {

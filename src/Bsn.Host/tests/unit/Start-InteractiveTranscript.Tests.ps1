@@ -21,6 +21,24 @@ BeforeAll {
     # Bsn.Common resolvable. Pull the enum value from the defining module's
     # own scope instead, where the literal always resolves.
     $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
+
+    # Shared assertion for the capture-metadata tests: a mocked engine
+    # wrapper must have received the bsn header block's fields under the
+    # same names on both engines, holding the real session context. The
+    # wrapper mock stores what it was called with in $script:CapturedMetadata.
+    $script:AssertCaptureMetadata = {
+        $captured = $script:CapturedMetadata
+        $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the capture metadata'
+        ((@($captured.Keys) | Sort-Object) -join ',') | Should -Be 'Edition,Machine,ProcessId,PSVersion,RecordedBy,SessionId,Username'
+        Should -Actual $captured.Username -Be ([Environment]::UserName)
+        Should -Actual $captured.Machine -Be ([System.Net.Dns]::GetHostName())
+        Should -Actual $captured.ProcessId -Be $PID
+        Should -Actual $captured.PSVersion -Be $PSVersionTable.PSVersion.ToString()
+        Should -Actual $captured.Edition -Be $PSVersionTable.PSEdition
+        Should -Actual $captured.RecordedBy -Be ('bsn.host {0}' -f (Get-Module -Name 'Bsn.Host').Version)
+        $parsedSessionId = [guid]::Empty
+        [guid]::TryParse($captured.SessionId, [ref]$parsedSessionId) | Should -BeTrue -Because 'the session id is a GUID minted at capture time'
+    }
 }
 
 Describe 'Start-InteractiveTranscript' {
@@ -99,6 +117,63 @@ Describe 'Start-InteractiveTranscript' {
             Start-InteractiveTranscript -Command 'htop' -Path (Join-Path -Path $TestDrive -ChildPath 'b.cast')
 
             Should -Invoke -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $Command -eq 'htop' }
+        }
+
+        It 'threads the capture metadata to the Windows engine as named fields' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            $script:CapturedMetadata = $null
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedMetadata = @{
+                    SessionId  = $SessionId
+                    RecordedBy = $RecordedBy
+                    Machine    = $Machine
+                    Username   = $Username
+                    ProcessId  = $ProcessId
+                    PSVersion  = $PSVersion
+                    Edition    = $Edition
+                }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'metadata-win.cast')
+
+            & $script:AssertCaptureMetadata
+        }
+
+        It 'threads the same capture metadata to the Unix engine' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Linux' }
+            $script:CapturedMetadata = $null
+            Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedMetadata = @{
+                    SessionId  = $SessionId
+                    RecordedBy = $RecordedBy
+                    Machine    = $Machine
+                    Username   = $Username
+                    ProcessId  = $ProcessId
+                    PSVersion  = $PSVersion
+                    Edition    = $Edition
+                }
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'metadata-unix.cast')
+
+            & $script:AssertCaptureMetadata
+        }
+
+        It 'mints a new session id for every recording' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            $script:CapturedSessionIds = [System.Collections.Generic.List[string]]::new()
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedSessionIds.Add($SessionId)
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'session-a.cast')
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'session-b.cast')
+
+            @($script:CapturedSessionIds).Count | Should -Be 2
+            $script:CapturedSessionIds[0] | Should -Not -Be $script:CapturedSessionIds[1]
         }
 
         It 'propagates the recorded exit code to LASTEXITCODE' {

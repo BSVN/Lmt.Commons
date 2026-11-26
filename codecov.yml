@@ -9,3 +9,9 @@
 ignore:
   - "src/Bsn.Host/src/PtyRecorder.cs"
   - "src/Bsn.SystemManagement/src/PowerProf.cs"
+  # The PowerShell face of the ConPTY engine above: Start-BsnWindowsPtyRecording
+  # only runs with a real console, so its system tests record inside a separate
+  # hidden-console process that Pester's coverage cannot observe. It is verified
+  # end to end instead (the bsn header block system test asserts the header a
+  # real recording produces) and gated by PSScriptAnalyzer.
+  - "src/Bsn.Host/Private/Start-BsnWindowsPtyRecording.ps1"

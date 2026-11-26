@@ -219,22 +219,25 @@ function Start-InteractiveTranscript {
         # context from the recording instead of asking for it. The session
         # id is a GUID minted at capture time - the recording and its
         # downstream audit artifacts share one stable identity.
+        #
+        # The values are gathered here, once, and splatted into either
+        # engine wrapper as named parameters (the same names the readers
+        # of the block expose).
         $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
         $recordedBy = 'bsn.host'
         if ($owningModule -and $owningModule.Version) {
             $recordedBy = 'bsn.host {0}' -f $owningModule.Version
         }
-        $captureMetadata = [ordered]@{
-            session_id = [guid]::NewGuid().ToString()
-            recorded_by = $recordedBy
-            host = [System.Net.Dns]::GetHostName()
-            user = [Environment]::UserName
-            pid = $PID
-            psversion = $PSVersionTable.PSVersion.ToString()
-            psedition = [string]$PSVersionTable.PSEdition
+        $captureMetadata = @{
+            SessionId = [guid]::NewGuid().ToString()
+            RecordedBy = $recordedBy
+            Machine = [System.Net.Dns]::GetHostName()
+            Username = [Environment]::UserName
+            ProcessId = $PID
+            PSVersion = $PSVersionTable.PSVersion.ToString()
+            Edition = [string]$PSVersionTable.PSEdition
         }
-        $headerMetadata = $captureMetadata | ConvertTo-Json -Compress -Depth 3
-        Write-Verbose -Message ('Recording capture metadata: {0}' -f $headerMetadata)
+        Write-Verbose -Message ('Recording audit metadata: session {0} on {1} as {2}' -f $captureMetadata.SessionId, $captureMetadata.Machine, $captureMetadata.Username)
 
         # Stop signaling channel: Stop-InteractiveTranscript (running inside the recorded
         # session) creates this file; the recording engine finalizes and returns.
@@ -245,12 +248,12 @@ function Start-InteractiveTranscript {
         try {
             if ($platform -eq [BsnOperatingSystem]::Windows) {
                 $commandLine = Get-BsnRecordingCommandLine -Command $Command -ShowRecordingIndicator:$ShowRecordingIndicator.IsPresent
-                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -HeaderMetadata $headerMetadata
+                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion @captureMetadata
             }
             else {
                 # Linux and macOS are both Unix: they share the script(1)-based engine,
                 # which picks util-linux (exact timing) or BSD script (approximated) itself.
-                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -HeaderMetadata $headerMetadata
+                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion @captureMetadata
             }
         }
         finally {

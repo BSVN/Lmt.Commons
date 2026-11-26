@@ -17,6 +17,14 @@
 
     The file is written as UTF-8 without BOM with LF line endings, matching
     the asciicast specification. All number formatting is culture-invariant.
+
+    The optional capture-time audit metadata parameters (-SessionId,
+    -RecordedBy, -Machine, -Username, -ProcessId, -PSVersion, -Edition)
+    are written into the header's "bsn" block. Their names mirror the
+    fields ConvertTo-BsnTranscript reads back from that block, and the
+    block's shape is defined once in ConvertTo-BsnCastHeaderBlock so
+    both recording engines emit identical keys. The block is omitted
+    entirely when no metadata field is supplied.
 #>
 function ConvertTo-BsnAsciicast {
     [CmdletBinding(DefaultParameterSetName = 'Timing')]
@@ -44,9 +52,20 @@ function ConvertTo-BsnAsciicast {
 
     [int]$ExitCode = 0,
 
-    # Pre-serialized JSON object written under the cast header's "bsn" key
-    # (the capture-time audit metadata block). Omitted for ecosystem casts.
-    [string]$HeaderMetadata = ''
+        # Capture-time audit metadata (the cast header's "bsn" block).
+        [string]$SessionId = '',
+
+        [string]$RecordedBy = '',
+
+        [string]$Machine = '',
+
+        [string]$Username = '',
+
+        [int]$ProcessId = 0,
+
+        [string]$PSVersion = '',
+
+        [string]$Edition = ''
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
@@ -108,14 +127,15 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
-        # Capture-time audit metadata (the "bsn" header block): the caller
-        # passes a pre-serialized JSON object. Guard the shape (an object
-        # literal, nothing else) so a malformed value can never corrupt the
-        # header - it is simply omitted instead.
+        # Capture-time audit metadata (the "bsn" header block). The helper
+        # owns the block's shape and returns a well-formed JSON object, or
+        # an empty string when no field was supplied (block omitted).
+        $metadataJson = ConvertTo-BsnCastHeaderBlock `
+            -SessionId $SessionId -RecordedBy $RecordedBy -Machine $Machine -Username $Username `
+            -ProcessId $ProcessId -PSVersion $PSVersion -Edition $Edition
         $metadataFragment = ''
-        $trimmedMetadata = $HeaderMetadata.Trim()
-        if ($trimmedMetadata.StartsWith('{') -and $trimmedMetadata.EndsWith('}')) {
-            $metadataFragment = ', "bsn": ' + $trimmedMetadata
+        if ($metadataJson) {
+            $metadataFragment = ', "bsn": ' + $metadataJson
         }
         if ($CastVersion -eq 3) {
             $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `

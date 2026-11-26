@@ -53,8 +53,9 @@
     - Bsn: audit-framed - adds session id, recorded-by version, terminal
       size, cast file path and the SHA-256 hash of the cast the transcript
       was rendered from (plus the exit code for v3 recordings), proving
-      which evidence produced the text. The session id defaults to a
-      deterministic value derived from the cast hash and can be supplied.
+      which evidence produced the text. The session id is the recorded one
+      (capture-time bsn block) when present, else a deterministic value
+      derived from the cast hash, and can be supplied.
 
     Encoding: real Start-Transcript files are UTF-16LE on Windows
     PowerShell 5.1 and UTF-8 on PowerShell 7; the export standardizes on
@@ -109,30 +110,36 @@
     enum; the string member names bind as before.
 
 .PARAMETER Username
-    Fills the header Username field (blank by default).
+    Overrides the header Username field. Auto-filled from the cast
+    header's capture-time bsn block when present; blank otherwise.
 
 .PARAMETER RunAsUser
     Fills the header RunAs User field (blank by default).
 
 .PARAMETER Machine
-    Fills the header Machine field (blank by default).
+    Overrides the header Machine field. Auto-filled from the cast header's
+    capture-time bsn block when present; blank otherwise.
 
 .PARAMETER HostApplication
     Overrides the header Host Application field. Derived from the cast
     header (command, else env.SHELL) when omitted.
 
 .PARAMETER ProcessId
-    Fills the header Process ID field (blank by default).
+    Overrides the header Process ID field. Auto-filled from the cast
+    header's capture-time bsn block when present; blank otherwise.
 
 .PARAMETER PSVersion
-    Fills the header PSVersion field (blank by default).
+    Overrides the header PSVersion field. Auto-filled from the cast
+    header's capture-time bsn block when present; blank otherwise.
 
 .PARAMETER Edition
-    Fills the header PSEdition field (blank by default).
+    Overrides the header PSEdition field. Auto-filled from the cast
+    header's capture-time bsn block when present; blank otherwise.
 
 .PARAMETER SessionId
-    Overrides the Bsn header session id. Derived from the cast hash
-    ('bsn-' plus its first twelve hex characters) when omitted.
+    Overrides the Bsn header session id: the recorded session id from the
+    cast header's bsn block when present, else a value derived from the
+    cast hash ('bsn-' plus its first twelve hex characters).
 
 .INPUTS
     System.String

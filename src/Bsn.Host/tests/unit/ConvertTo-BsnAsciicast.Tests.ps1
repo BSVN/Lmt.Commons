@@ -180,18 +180,21 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            $metadata = [ordered]@{
-                session_id = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
-                recorded_by = 'bsn.host 0.3.0'
-                host = 'ws01'
-                user = 'jdoe'
-                pid = 4242
-                psversion = '7.6.9'
-                psedition = 'Core'
+            # The fields Start-InteractiveTranscript gathers, under the
+            # parameter names shared by both engines and the reader.
+            $metadata = @{
+                SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+                RecordedBy = 'bsn.host 0.3.0'
+                Machine = 'ws01'
+                Username = 'jdoe'
+                ProcessId = 4242
+                PSVersion = '7.6.9'
+                Edition = 'Core'
             }
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -HeaderMetadata $m } $outputPath $timingPath $castPath ($metadata | ConvertTo-Json -Compress)
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $fields) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c @fields } $outputPath $timingPath $castPath $metadata
 
-            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $headerLine = Get-Content -LiteralPath $castPath -TotalCount 1
+            $header = $headerLine | ConvertFrom-Json
             $header.bsn.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
             $header.bsn.recorded_by | Should -Be 'bsn.host 0.3.0'
             $header.bsn.host | Should -Be 'ws01'
@@ -199,6 +202,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             $header.bsn.pid | Should -Be 4242
             $header.bsn.psversion | Should -Be '7.6.9'
             $header.bsn.psedition | Should -Be 'Core'
+            $headerLine.Contains('"pid":4242') | Should -BeTrue -Because 'pid must stay a JSON number'
             # The rest of the header stays spec-shaped.
             $header.version | Should -Be 2
             $header.env.SHELL | Should -Be 'shell'
@@ -211,11 +215,13 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -HeaderMetadata $m } $outputPath $timingPath $castPath '{"session_id":"gid"}'
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -SessionId '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8' -Machine 'ws01' -Username 'jdoe' } $outputPath $timingPath $castPath
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 3
-            $header.bsn.session_id | Should -Be 'gid'
+            $header.bsn.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+            $header.bsn.host | Should -Be 'ws01'
+            $header.bsn.user | Should -Be 'jdoe'
         }
 
         It 'omits the bsn block when no metadata is supplied' {
@@ -231,18 +237,18 @@ Describe 'ConvertTo-BsnAsciicast' {
             $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
         }
 
-        It 'ignores malformed metadata instead of corrupting the header' {
-            $outputPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.log'
-            $timingPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.timing'
-            $castPath = Join-Path -Path $TestDrive -ChildPath 'badmeta.cast'
+        It 'writes only the metadata fields that were supplied' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'partial.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'partial.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'partial.cast'
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -HeaderMetadata $m } $outputPath $timingPath $castPath 'not-json-object'
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -SessionId 'gid' -Username 'jdoe' } $outputPath $timingPath $castPath
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 2
-            $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
+            (@($header.bsn.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,user'
         }
     }
 
@@ -290,5 +296,52 @@ Describe 'ConvertTo-BsnAsciicast' {
             # No new corruption introduced by the filter.
             ([regex]::Matches($castText, [regex]::Escape([string][char]0xFFFD))).Count | Should -Be 0
         }
+    }
+}
+
+Describe 'ConvertTo-BsnCastHeaderBlock' {
+    # The single definition of the bsn header block's shape: both engines
+    # build the block through this helper.
+    It 'returns an empty string when no field is supplied (block omitted)' {
+        $result = & (Get-Module -Name 'Bsn.Host') { ConvertTo-BsnCastHeaderBlock }
+        $result | Should -Be ''
+    }
+
+    It 'serializes every supplied field under the block keys in a stable order' {
+        $result = & (Get-Module -Name 'Bsn.Host') {
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -RecordedBy 'bsn.host 0.3.0' -Machine 'ws01' -Username 'jdoe' -ProcessId 4242 -PSVersion '7.6.9' -Edition 'Core'
+        }
+
+        $block = $result | ConvertFrom-Json
+        (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,recorded_by,host,user,pid,psversion,psedition'
+        $block.session_id | Should -Be 'guid-1'
+        $block.recorded_by | Should -Be 'bsn.host 0.3.0'
+        $block.host | Should -Be 'ws01'
+        $block.user | Should -Be 'jdoe'
+        $block.pid | Should -Be 4242
+        $block.psversion | Should -Be '7.6.9'
+        $block.psedition | Should -Be 'Core'
+        $result.Contains('"pid":4242') | Should -BeTrue -Because 'pid must be a JSON number, not a string'
+    }
+
+    It 'omits fields left empty' {
+        $result = & (Get-Module -Name 'Bsn.Host') {
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -Machine 'ws01' -ProcessId 0
+        }
+
+        $block = $result | ConvertFrom-Json
+        (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,host'
+    }
+
+    It 'escapes values, keeping the result a single line of valid JSON' {
+        $awkwardValue = 'Do"e\J' + [char]10 + 'x'
+        $result = & (Get-Module -Name 'Bsn.Host') {
+            param($value)
+            ConvertTo-BsnCastHeaderBlock -SessionId 'guid-1' -Username $value
+        } $awkwardValue
+
+        $result.Contains([string][char]10) | Should -BeFalse -Because 'the value is spliced into the single header line'
+        $block = $result | ConvertFrom-Json
+        $block.user | Should -Be $awkwardValue
     }
 }

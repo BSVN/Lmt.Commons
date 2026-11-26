@@ -173,7 +173,9 @@ Import-Module (Join-Path `$RepoRoot 'src/Bsn.Common/Bsn.Common.psd1') -Force
 Import-Module (Join-Path `$RepoRoot 'src/Bsn.Host/Bsn.Host.psd1') -Force
 $stopBlock
 $recordingBlock
-@{ CastPath = `$result.CastPath; ExitCode = `$result.ExitCode; DurationSec = `$result.DurationSec; StoppedByRequest = `$result.StoppedByRequest } |
+# RecorderPid is the pwsh that ran Start-InteractiveTranscript: the capture
+# metadata test ties the header's "pid" to the process that recorded.
+@{ CastPath = `$result.CastPath; ExitCode = `$result.ExitCode; DurationSec = `$result.DurationSec; StoppedByRequest = `$result.StoppedByRequest; RecorderPid = `$PID } |
     ConvertTo-Json | Set-Content -LiteralPath `$ResultPath
 "@
         $resultPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ('bsn-systest-result-' + [guid]::NewGuid().ToString('N') + '.json')
@@ -1262,6 +1264,59 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
             $stream.Contains('Linux') -or $stream.Contains('Darwin') | Should -BeTrue -Because 'the uname -s output must be captured'
             $replacementCount = ([regex]::Matches($stream, [regex]::Escape([string][char]0xFFFD))).Count
             $replacementCount | Should -Be 0 -Because 'the recording must contain zero U+FFFD replacement characters'
+        }
+    }
+
+    Context 'capture-time audit metadata (the bsn header block)' {
+        It 'stamps the session context into the header of a real recording on the current engine' {
+            # Both engines build the block through ConvertTo-BsnCastHeaderBlock,
+            # but only a real recording exercises each engine's own path:
+            # the ConPTY CastWriter (compiled code) on Windows, the script(1)
+            # conversion on Unix.
+            if (-not $script:CanRunSystemTests) {
+                Set-ItResult -Skipped -Because 'pwsh is required to run recorded scenarios and was not found.'
+            }
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
+            }
+
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'metadata.cast'
+            $recorderVersion = $null
+            if ($script:IsWindowsPlatform) {
+                # The recording runs inside the hidden-console pwsh, which
+                # reports its own process id with the result.
+                $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-metadata.ps1'
+                "Write-Output 'METADATA-MARKER'" | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
+                $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+                $recorderProcessId = $result.RecorderPid
+            }
+            else {
+                # Recorded in-process, so this test host is the recorder.
+                $result = Start-InteractiveTranscript -Command 'echo METADATA-MARKER' -Path $castPath
+                $recorderProcessId = $PID
+                $recorderVersion = $PSVersionTable.PSVersion.ToString()
+            }
+            $result.ExitCode | Should -Be 0
+
+            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $block = $header.bsn
+            $block | Should -Not -BeNullOrEmpty -Because 'every recording carries the bsn header block'
+            (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,recorded_by,host,user,pid,psversion,psedition'
+            $parsedSessionId = [guid]::Empty
+            [guid]::TryParse([string]$block.session_id, [ref]$parsedSessionId) | Should -BeTrue -Because 'the session id is a GUID minted at capture time'
+            $moduleVersion = (Test-ModuleManifest -Path (Join-Path -Path $script:RepoRoot -ChildPath 'src/Bsn.Host/Bsn.Host.psd1')).Version
+            $block.recorded_by | Should -Be ('bsn.host {0}' -f $moduleVersion)
+            $block.host | Should -Be ([System.Net.Dns]::GetHostName())
+            $block.user | Should -Be ([Environment]::UserName)
+            $block.pid | Should -Be $recorderProcessId -Because 'pid is the PowerShell that made the recording'
+            $block.psedition | Should -Be 'Core'
+            if ($recorderVersion) {
+                $block.psversion | Should -Be $recorderVersion
+            }
+            else {
+                # The hidden runner is whichever pwsh is on PATH; only its shape is stable here.
+                [string]$block.psversion | Should -Match '^\d+\.\d+'
+            }
         }
     }
 
