@@ -18,7 +18,7 @@
     cmdlet checks this before dispatching.
 
     -AuditMetadata is the recording's capture-time audit metadata. It is
-    passed on to the cast header's "bsn" block; see BsnAuditMetadata.
+    passed on to the cast header's "bsn" block; see AuditMetadata.
 
 .PARAMETER CommandLine
     Command line the engine runs inside the pseudo-console.
@@ -42,7 +42,7 @@
 
 .PARAMETER AuditMetadata
     Capture-time audit metadata for the cast header's "bsn" block, as a
-    BsnAuditMetadata object; Start-InteractiveTranscript creates one per
+    AuditMetadata object; Start-InteractiveTranscript creates one per
     recording. Omit it to leave the block out.
 #>
 function Start-BsnWindowsPtyRecording {
@@ -65,18 +65,13 @@ function Start-BsnWindowsPtyRecording {
         [int]$CastVersion = 2,
 
         # Capture-time audit metadata, written into the header's "bsn" block.
-        [BsnAuditMetadata]$AuditMetadata
+        [Bsn.Host.Interop.AuditMetadata]$AuditMetadata
     )
 
-    # The engine is compiled code, so the object crosses the language
-    # boundary as its JSON form. An empty string leaves the block out.
-    $headerMetadata = ''
-    if ($AuditMetadata) {
-        $headerMetadata = $AuditMetadata.ToHeaderJson()
-    }
-
+    # The audit metadata object is the engine's own type, so it is passed
+    # as-is; the engine serializes it into the header (null: no block).
     try {
-        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion, $HeaderMetadata)
+        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion, $AuditMetadata)
     }
     catch [System.Runtime.InteropServices.EntryPointNotFoundException] {
         throw 'Interactive transcripts on Windows require pseudo-console support (Windows 10 1809 or newer).'

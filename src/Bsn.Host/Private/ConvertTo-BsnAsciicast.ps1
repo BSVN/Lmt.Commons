@@ -19,7 +19,7 @@
     the asciicast specification. All number formatting is culture-invariant.
 
     -AuditMetadata carries the capture-time audit metadata as one
-    BsnAuditMetadata object and is written into the header's "bsn" block.
+    AuditMetadata object and is written into the header's "bsn" block.
     The object's ToHeaderJson() method is the single definition of the
     block's shape for both recording engines and documents which block
     key each field fills. The block is omitted when no object is passed
@@ -61,7 +61,7 @@
 
 .PARAMETER AuditMetadata
     Capture-time audit metadata for the header's "bsn" block, as a
-    BsnAuditMetadata object: the recorded session (GUID), the module that
+    AuditMetadata object: the recorded session (GUID), the module that
     made the recording, the computer, the user, the process id and the
     version and edition of the PowerShell that made the recording.
     Start-InteractiveTranscript creates one per recording. Omit it to
@@ -100,7 +100,7 @@ function ConvertTo-BsnAsciicast {
         [int]$CastVersion = 2,
 
         # Capture-time audit metadata, written into the header's "bsn" block.
-        [BsnAuditMetadata]$AuditMetadata,
+        [Bsn.Host.Interop.AuditMetadata]$AuditMetadata,
 
         [int]$ExitCode = 0
     )

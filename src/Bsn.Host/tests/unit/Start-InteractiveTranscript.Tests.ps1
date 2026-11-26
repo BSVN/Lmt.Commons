@@ -23,7 +23,7 @@ BeforeAll {
     $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
 
     # Shared assertion for the capture-metadata tests: a mocked engine
-    # wrapper must have received the recording's BsnAuditMetadata object,
+    # wrapper must have received the recording's AuditMetadata object,
     # holding the real session context in every field. The wrapper mock
     # stores the object it was called with in $script:CapturedMetadata.
     $script:AssertCaptureMetadata = {

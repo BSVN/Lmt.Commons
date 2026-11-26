@@ -54,59 +54,6 @@ enum BsnTranscriptEncoding {
     UTF32
 }
 
-# Capture-time audit metadata: the session context a recording stamps into
-# its cast header's "bsn" block - who ran the session, where, and which
-# module and PowerShell recorded it. Start-InteractiveTranscript creates
-# one object per recording and passes it, as a single value, through the
-# engine wrappers to the cast writers, instead of repeating its fields as
-# parameters on every function. ToHeaderJson() is the one definition of
-# the block's shape, shared by both recording engines.
-#
-# Defined here, like the enums above, so the function files that take it
-# as a parameter type are compiled after it exists.
-class BsnAuditMetadata {
-    # GUID minted when the recording starts; block key "session_id".
-    [string] $SessionId = ''
-
-    # Module that made the recording, e.g. 'bsn.host 0.3.0'; "recorded_by".
-    [string] $RecordedBy = ''
-
-    # Machine the recorded session ran on; "host".
-    [string] $ComputerName = ''
-
-    # Account that started the recording; "user".
-    [string] $UserName = ''
-
-    # Process id of the PowerShell that made the recording; "pid". Zero
-    # leaves the key out of the block.
-    [int] $ProcessId = 0
-
-    # Version of the PowerShell that made the recording; "psversion".
-    [string] $PSVersion = ''
-
-    # Edition of the PowerShell that made the recording; "psedition".
-    [string] $Edition = ''
-
-    # The "bsn" block as a compact JSON object, ready to be spliced into
-    # the cast header line. Fields left empty are left out; an empty
-    # string means the object carries nothing and the block is omitted.
-    [string] ToHeaderJson() {
-        $metadata = [ordered]@{}
-        if ($this.SessionId) { $metadata['session_id'] = $this.SessionId }
-        if ($this.RecordedBy) { $metadata['recorded_by'] = $this.RecordedBy }
-        if ($this.ComputerName) { $metadata['host'] = $this.ComputerName }
-        if ($this.UserName) { $metadata['user'] = $this.UserName }
-        if ($this.ProcessId -gt 0) { $metadata['pid'] = $this.ProcessId }
-        if ($this.PSVersion) { $metadata['psversion'] = $this.PSVersion }
-        if ($this.Edition) { $metadata['psedition'] = $this.Edition }
-
-        if ($metadata.Count -eq 0) {
-            return ''
-        }
-        return (ConvertTo-Json -InputObject $metadata -Compress)
-    }
-}
-
 $script:ModuleRoot = $PSScriptRoot
 
 if (-not (Get-Module -Name 'Bsn.Common' -ErrorAction 'SilentlyContinue')) {

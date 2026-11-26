@@ -67,9 +67,11 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   fields (Username, Machine, Process ID, PSVersion, PSEdition) and the
   Bsn audit frame's session id / recorded-by, with explicit parameters
   still overriding; the audit converters consume the same block. Both
-  engines stamp the block (Windows: the ConPTY `CastWriter`; Unix: the
-  `script(1)` conversion), and a malformed metadata value can never
-  corrupt the header (shape-guarded, omitted instead).
+  engines stamp the block from one typed object, `AuditMetadata` in the
+  interop assembly: `Start-InteractiveTranscript` creates it, the engine
+  wrappers pass it on as `-AuditMetadata`, and its `ToHeaderJson()`
+  serializes it with the same escaping as the rest of the header
+  (Windows: the ConPTY `CastWriter`; Unix: the `script(1)` conversion).
 - `ConvertTo-BsnTranscript`: converts an asciicast (.cast) recording
   into a Start-Transcript-style plain-text transcript - the readable,
   auditor-facing rendering of the recorded evidence (issue #22). The

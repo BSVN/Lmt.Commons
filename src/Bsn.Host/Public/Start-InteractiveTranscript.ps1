@@ -220,7 +220,7 @@ function Start-InteractiveTranscript {
         # id is a GUID minted at capture time - the recording and its
         # downstream audit artifacts share one stable identity.
         #
-        # The values are gathered here, once, into a single BsnAuditMetadata
+        # The values are gathered here, once, into a single AuditMetadata
         # object that is passed to the engine wrapper and, from there, to
         # the cast writer.
         $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
@@ -228,7 +228,7 @@ function Start-InteractiveTranscript {
         if ($owningModule -and $owningModule.Version) {
             $recordedBy = 'bsn.host {0}' -f $owningModule.Version
         }
-        $auditMetadata = [BsnAuditMetadata]@{
+        $auditMetadata = [Bsn.Host.Interop.AuditMetadata]@{
             SessionId    = [guid]::NewGuid().ToString()
             RecordedBy   = $recordedBy
             ComputerName = [System.Net.Dns]::GetHostName()

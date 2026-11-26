@@ -177,6 +177,19 @@ before:
   Get-BsnScriptInvocationArguments unit tests keep this pinned, and the
   CI matrix runs a pinned ubuntu-24.04 image (util-linux 2.39) next to
   ubuntu-latest so two util-linux generations are covered.
+- Cast header audit metadata (the `bsn` block a recording stamps with
+  who ran the session, where, and which module and PowerShell recorded
+  it) has ONE definition: `AuditMetadata.ToHeaderJson()` in
+  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type whose
+  output is pinned byte for byte by the NUnit `AuditMetadataTests`. Do
+  not hand-build the block: `Start-InteractiveTranscript` creates the
+  object, the engine wrappers take it as `-AuditMetadata` (the ConPTY
+  engine receives the typed object, not JSON text), and both cast
+  writers only call `ToHeaderJson()`. Readers probe the block key by
+  key with `Get-BsnObjectProperty`, and casts without it must keep
+  converting. A new field therefore touches the C# property and its
+  NUnit cases, the gather site in `Start-InteractiveTranscript`, and
+  the readers.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
   self-contained (it is shipped alone to remote machines via
   `Invoke-Command -FilePath`, which cannot carry the module's DLL): its

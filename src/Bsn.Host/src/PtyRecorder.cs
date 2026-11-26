@@ -209,11 +209,12 @@ namespace Bsn.Host.Interop
         /// recording to castPath (asciicast v2 or v3 depending on castVersion). When
         /// stopFilePath is non-empty, creating that file terminates the recorded process
         /// and finalizes the recording (the Stop-InteractiveTranscript signaling channel).
-        /// headerMetadata is an optional pre-serialized JSON object (already escaped by
-        /// the PowerShell caller) written under the header's "bsn" key - the capture-time
-        /// audit metadata block (session id, recorded-by, host, user, pid, PS version).
+        /// auditMetadata is the optional capture-time audit metadata (session id,
+        /// recorded-by, host, user, pid, PS version); when it is given and carries any
+        /// value it is written under the header's "bsn" key. Null records a header
+        /// without the block.
         /// </summary>
-        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion, string headerMetadata)
+        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion, AuditMetadata auditMetadata)
         {
             IntPtr hRealIn = GetStdHandle(STD_INPUT_HANDLE);
             IntPtr hRealOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -300,7 +301,7 @@ namespace Bsn.Host.Interop
                 startupInfo.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
                 startupInfo.lpAttributeList = attributeList;
 
-                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion, headerMetadata);
+                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion, auditMetadata);
 
                 // Raw VT input so keystrokes (including escape sequences for TUI apps) pass through.
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, ENABLE_VIRTUAL_TERMINAL_INPUT); }
@@ -474,9 +475,7 @@ namespace Bsn.Host.Interop
         // sequences that span read boundaries are filtered correctly.
         private readonly TerminalQueryFilter outputQueryFilter = new TerminalQueryFilter();
 
-        private string headerMetadata;
-
-        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion, string headerMetadata)
+        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion, AuditMetadata auditMetadata)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
@@ -485,7 +484,6 @@ namespace Bsn.Host.Interop
             // data - a 0-byte cast or truncated final event (issue #6).
             writer.AutoFlush = true;
             this.castVersion = castVersion;
-            this.headerMetadata = headerMetadata;
             previousElapsed = 0.0;
             // Persistent decoders: handle multi-byte UTF-8 sequences that span
             // chunk boundaries without corrupting them to U+FFFD (issue #5).
@@ -497,15 +495,18 @@ namespace Bsn.Host.Interop
             {
                 title = title + " (input captured)";
             }
-            // Capture-time audit metadata (the "bsn" header block): the PowerShell
-            // caller passes a pre-serialized JSON object. Guard the shape (an
-            // object literal, nothing else) so a malformed value can never corrupt
-            // the header - it is simply omitted instead.
+            // Capture-time audit metadata (the "bsn" header block). AuditMetadata
+            // serializes and escapes itself, so only well-formed JSON is ever
+            // spliced into the header; a null object, or one that carries no
+            // value, leaves the block out.
             string metadataFragment = string.Empty;
-            string trimmedMetadata = (headerMetadata ?? string.Empty).Trim();
-            if (trimmedMetadata.StartsWith("{") && trimmedMetadata.EndsWith("}"))
+            if (auditMetadata != null)
             {
-                metadataFragment = ", \"bsn\": " + trimmedMetadata;
+                string metadataJson = auditMetadata.ToHeaderJson();
+                if (metadataJson.Length > 0)
+                {
+                    metadataFragment = ", \"bsn\": " + metadataJson;
+                }
             }
             if (castVersion == 3)
             {
@@ -514,9 +515,9 @@ namespace Bsn.Host.Interop
                     + ", \"rows\": " + height.ToString(CultureInfo.InvariantCulture)
                     + ", \"type\": \"xterm-256color\"}"
                     + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"command\": \"" + Escape(shellName) + "\""
-                    + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
+                    + ", \"command\": \"" + JsonText.Escape(shellName) + "\""
+                    + ", \"title\": \"" + JsonText.Escape(title) + "\""
+                    + ", \"env\": {\"SHELL\": \"" + JsonText.Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
                     + metadataFragment + "}");
             }
             else
@@ -524,8 +525,8 @@ namespace Bsn.Host.Interop
                 writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
                     + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
                     + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
+                    + ", \"title\": \"" + JsonText.Escape(title) + "\""
+                    + ", \"env\": {\"SHELL\": \"" + JsonText.Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
                     + metadataFragment + "}");
             }
         }
@@ -559,7 +560,7 @@ namespace Bsn.Host.Interop
                 text = outputQueryFilter.Filter(text);
             }
 
-            string escaped = Escape(text);
+            string escaped = JsonText.Escape(text);
             lock (sync)
             {
                 if (writer == null) { return; }
@@ -600,32 +601,13 @@ namespace Bsn.Host.Interop
                     string filterTail = outputQueryFilter.FlushRemaining();
                     if (filterTail.Length > 0)
                     {
-                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + Escape(filterTail) + "\"]");
+                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + JsonText.Escape(filterTail) + "\"]");
                     }
 
                     writer.Dispose();
                     writer = null;
                 }
             }
-        }
-
-        private static string Escape(string text)
-        {
-            StringBuilder escaped = new StringBuilder(text.Length + 8);
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == '\\') { escaped.Append("\\\\"); }
-                else if (c == '"') { escaped.Append("\\\""); }
-                else if (c == '\n') { escaped.Append("\\n"); }
-                else if (c == '\r') { escaped.Append("\\r"); }
-                else if (c == '\t') { escaped.Append("\\t"); }
-                else if (c == '\b') { escaped.Append("\\b"); }
-                else if (c == '\f') { escaped.Append("\\f"); }
-                else if (c < 0x20 || c == 0x7f) { escaped.Append("\\u" + ((int)c).ToString("x4", CultureInfo.InvariantCulture)); }
-                else { escaped.Append(c); }
-            }
-            return escaped.ToString();
         }
     }
 }

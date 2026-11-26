@@ -15,19 +15,16 @@ BeforeAll {
     }
 
     # What Start-InteractiveTranscript gathers for a recording, as the one
-    # object the engine wrappers and the cast writer take. A class defined
-    # in a module cannot be named by a bare type literal from test scope,
-    # so the object is created in the module's own scope.
-    $script:FullMetadata = & (Get-Module -Name 'Bsn.Host') {
-        [BsnAuditMetadata]@{
-            SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
-            RecordedBy = 'bsn.host 0.3.0'
-            ComputerName = 'ws01'
-            UserName = 'jdoe'
-            ProcessId = 4242
-            PSVersion = '7.6.9'
-            Edition = 'Core'
-        }
+    # object the engine wrappers and the cast writer take. AuditMetadata is
+    # a type of the interop assembly, so it can be created directly here.
+    $script:FullMetadata = [Bsn.Host.Interop.AuditMetadata]@{
+        SessionId = '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
+        RecordedBy = 'bsn.host 0.3.0'
+        ComputerName = 'ws01'
+        UserName = 'jdoe'
+        ProcessId = 4242
+        PSVersion = '7.6.9'
+        Edition = 'Core'
     }
 }
 
@@ -252,7 +249,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            $emptyMetadata = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]::new() }
+            $emptyMetadata = [Bsn.Host.Interop.AuditMetadata]::new()
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $emptyMetadata
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
@@ -267,7 +264,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             Set-Content -LiteralPath $outputPath -Value 'x' -NoNewline
             Set-Content -LiteralPath $timingPath -Value '+0 1' -NoNewline
 
-            $partialMetadata = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]@{ SessionId = 'gid'; UserName = 'jdoe' } }
+            $partialMetadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'gid'; UserName = 'jdoe' }
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $partialMetadata
 
             $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
@@ -323,16 +320,21 @@ Describe 'ConvertTo-BsnAsciicast' {
     }
 }
 
-Describe 'BsnAuditMetadata.ToHeaderJson' {
-    # The single definition of the bsn header block's shape: both engines
-    # write the block from this method. Instances are created in the
-    # module's scope (see BeforeAll); their members are usable from here.
-    It 'returns an empty string for an object that carries no values' {
-        $empty = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]::new() }
-        $empty.ToHeaderJson() | Should -Be ''
+Describe 'AuditMetadata from PowerShell' {
+    # AuditMetadata is the interop assembly's type for the capture-time
+    # audit metadata; its block format is pinned byte for byte by the
+    # assembly's own NUnit tests (AuditMetadataTests). These cover the
+    # PowerShell side of the contract: Start-InteractiveTranscript fills
+    # the object in from PowerShell, and the Unix cast writer serializes it.
+    It 'is created from a hashtable by property name' {
+        $metadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'guid-1'; UserName = 'jdoe'; ProcessId = 4242 }
+
+        $metadata.SessionId | Should -Be 'guid-1'
+        $metadata.UserName | Should -Be 'jdoe'
+        $metadata.ProcessId | Should -Be 4242
     }
 
-    It 'serializes every field under the block keys in a stable order' {
+    It 'serializes every property to its block key, with pid as a number' {
         $result = $script:FullMetadata.ToHeaderJson()
 
         $block = $result | ConvertFrom-Json
@@ -347,23 +349,17 @@ Describe 'BsnAuditMetadata.ToHeaderJson' {
         $result.Contains('"pid":4242') | Should -BeTrue -Because 'pid must be a JSON number, not a string'
     }
 
-    It 'omits fields left empty' {
-        $partial = & (Get-Module -Name 'Bsn.Host') { [BsnAuditMetadata]@{ SessionId = 'guid-1'; ComputerName = 'ws01' } }
-
-        $block = $partial.ToHeaderJson() | ConvertFrom-Json
-        (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,host'
+    It 'serializes to an empty string when no property is set' {
+        ([Bsn.Host.Interop.AuditMetadata]::new()).ToHeaderJson() | Should -Be ''
     }
 
-    It 'escapes values, keeping the result a single line of valid JSON' {
-        $awkwardValue = 'Do"e\J' + [char]10 + 'x'
-        $metadata = & (Get-Module -Name 'Bsn.Host') {
-            param($value)
-            [BsnAuditMetadata]@{ SessionId = 'guid-1'; UserName = $value }
-        } $awkwardValue
+    It 'keeps the result one line of valid JSON for values that need escaping' {
+        $awkwardValue = 'Do"e\J' + [char]10 + [char]27 + 'x'
+        $metadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'guid-1'; UserName = $awkwardValue }
 
         $result = $metadata.ToHeaderJson()
         $result.Contains([string][char]10) | Should -BeFalse -Because 'the value is spliced into the single header line'
-        $block = $result | ConvertFrom-Json
-        $block.user | Should -Be $awkwardValue
+        $result.Contains([string][char]13) | Should -BeFalse
+        ($result | ConvertFrom-Json).user | Should -Be $awkwardValue
     }
 }

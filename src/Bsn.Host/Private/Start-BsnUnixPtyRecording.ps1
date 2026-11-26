@@ -19,7 +19,7 @@
     emitted when -RecordInput is requested.
 
     -AuditMetadata is the recording's capture-time audit metadata. It is
-    passed on to the cast header's "bsn" block; see BsnAuditMetadata.
+    passed on to the cast header's "bsn" block; see AuditMetadata.
 
 .PARAMETER Command
     Command to record. Omit it to record the default interactive shell.
@@ -44,7 +44,7 @@
 
 .PARAMETER AuditMetadata
     Capture-time audit metadata for the cast header's "bsn" block, as a
-    BsnAuditMetadata object; Start-InteractiveTranscript creates one per
+    AuditMetadata object; Start-InteractiveTranscript creates one per
     recording. Omit it to leave the block out.
 #>
 function Start-BsnUnixPtyRecording {
@@ -66,7 +66,7 @@ function Start-BsnUnixPtyRecording {
         [int]$CastVersion = 2,
 
         # Capture-time audit metadata, written into the header's "bsn" block.
-        [BsnAuditMetadata]$AuditMetadata
+        [Bsn.Host.Interop.AuditMetadata]$AuditMetadata
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
