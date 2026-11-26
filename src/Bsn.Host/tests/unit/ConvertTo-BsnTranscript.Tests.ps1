@@ -1,3 +1,6 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingComputerNameHardcoded', '', Justification = 'Test fixtures use synthetic computer names.')]
+param()
+
 BeforeAll {
     $moduleRoot = Split-Path -Parent -Path (Split-Path -Parent -Path $PSScriptRoot)
     # Make the repo sibling module Bsn.Common resolvable for RequiredModules validation.
@@ -40,9 +43,9 @@ BeforeAll {
         param(
             [string]$StartTimeText,
             [string]$EndTimeText,
-            [string]$Username = '',
+            [string]$UserName = '',
             [string]$RunAsUser = '',
-            [string]$Machine = '',
+            [string]$ComputerName = '',
             [string]$HostApplication = '',
             [string]$ProcessId = '',
             [string]$PSVersion = '',
@@ -55,9 +58,9 @@ BeforeAll {
         $lines.Add($script:Separator)
         $lines.Add('PowerShell transcript start')
         $lines.Add('Start time: ' + $StartTimeText)
-        $lines.Add('Username: ' + $Username)
+        $lines.Add('Username: ' + $UserName)
         $lines.Add('RunAs User: ' + $RunAsUser)
-        $lines.Add('Machine: ' + $Machine)
+        $lines.Add('Machine: ' + $ComputerName)
         $lines.Add('Host Application: ' + $HostApplication)
         $lines.Add('Process ID: ' + $ProcessId)
         $lines.Add('PSVersion: ' + $PSVersion)
@@ -255,13 +258,13 @@ Describe 'ConvertTo-BsnTranscript' {
 
         It 'fills blank engine fields when parameters are supplied' {
             $result = ConvertTo-BsnTranscript -Path $script:SessionCastPath `
-                -Username 'CONTOSO\jdoe' -RunAsUser 'CONTOSO\admin' -Machine 'WS01' `
+                -UserName 'CONTOSO\jdoe' -RunAsUser 'CONTOSO\admin' -ComputerName 'WS01' `
                 -ProcessId 4242 -PSVersion '7.4.0' -Edition 'Core'
 
             $expected = Get-BsnExpectedTranscript `
                 -StartTimeText (Get-BsnExpectedTimeText -Seconds 1793895000) `
                 -EndTimeText (Get-BsnExpectedTimeText -Seconds (1793895000 + 1)) `
-                -Username 'CONTOSO\jdoe' -RunAsUser 'CONTOSO\admin' -Machine 'WS01' `
+                -UserName 'CONTOSO\jdoe' -RunAsUser 'CONTOSO\admin' -ComputerName 'WS01' `
                 -HostApplication 'pwsh' -ProcessId '4242' -PSVersion '7.4.0' -ExpectedPSEdition 'Core' `
                 -BodyLines @('PS C:\> Get-Process', 'handles  npm(k)', '100%ress 50%', '')
 
@@ -506,7 +509,7 @@ Describe 'ConvertTo-BsnTranscript' {
         }
 
         It 'lets explicit parameters override the bsn block' {
-            $result = ConvertTo-BsnTranscript -Path $script:MetadataCastPath -Username 'override' -Machine 'other01' -HeaderMode Bsn -SessionId 'norm-1'
+            $result = ConvertTo-BsnTranscript -Path $script:MetadataCastPath -UserName 'override' -ComputerName 'other01' -HeaderMode Bsn -SessionId 'norm-1'
             $result | Should -BeLike '*Username: override*'
             $result | Should -BeLike '*Machine: other01*'
             $result | Should -BeLike '*Session Id: norm-1*'

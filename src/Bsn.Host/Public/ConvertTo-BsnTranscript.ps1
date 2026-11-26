@@ -109,14 +109,14 @@
     BOM; UTF8 deliberately does not. Typed as the BsnTranscriptEncoding
     enum; the string member names bind as before.
 
-.PARAMETER Username
+.PARAMETER UserName
     Overrides the header Username field. Auto-filled from the cast
     header's capture-time bsn block when present; blank otherwise.
 
 .PARAMETER RunAsUser
     Fills the header RunAs User field (blank by default).
 
-.PARAMETER Machine
+.PARAMETER ComputerName
     Overrides the header Machine field. Auto-filled from the cast header's
     capture-time bsn block when present; blank otherwise.
 
@@ -183,7 +183,7 @@
     recordings where the input was not echoed.
 
 .EXAMPLE
-    ConvertTo-BsnTranscript session01.cast -Username 'CONTOSO\jdoe' -Machine 'WS01' -ProcessId 12345 -PSVersion 7.4.0 -Edition Core
+    ConvertTo-BsnTranscript session01.cast -UserName 'CONTOSO\jdoe' -ComputerName 'WS01' -ProcessId 12345 -PSVersion 7.4.0 -Edition Core
 
     Produces a fully populated Standard header (for example when a
     wrapper script knows the session context a cast cannot carry).
@@ -215,11 +215,11 @@ function ConvertTo-BsnTranscript {
 
         [BsnTranscriptEncoding]$Encoding = [BsnTranscriptEncoding]::UTF8,
 
-        [string]$Username = '',
+        [string]$UserName = '',
 
         [string]$RunAsUser = '',
 
-        [string]$Machine = '',
+        [string]$ComputerName = '',
 
         [string]$HostApplication = '',
 
@@ -399,8 +399,8 @@ function ConvertTo-BsnTranscript {
 
         # Field resolution order: explicit parameter -> capture-time bsn block
         # -> blank / derived (casts without the block keep the old behavior).
-        $usernameText = if ($Username) { $Username } else { $bsnUser }
-        $machineText = if ($Machine) { $Machine } else { $bsnHost }
+        $usernameText = if ($UserName) { $UserName } else { $bsnUser }
+        $machineText = if ($ComputerName) { $ComputerName } else { $bsnHost }
         $processIdText = if ($ProcessId) { $ProcessId } else { $bsnPid }
         $psVersionText = if ($PSVersion) { $PSVersion } else { $bsnPsversion }
         $psEditionText = if ($Edition) { $Edition } else { $bsnPsedition }

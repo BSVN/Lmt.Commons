@@ -54,13 +54,17 @@ LONG DESCRIPTION
     are resolved, so shell sessions - where echo places the typed
     commands into the output stream - convert to clean text.
 
-    -HeaderMode Standard (default) mimics Start-Transcript: engine
-    fields it derives from the session (Username, Machine, PSVersion,
-    ...) are blank unless supplied via parameters; Host Application is
-    derived from the cast header. -HeaderMode Bsn adds the audit frame:
-    a deterministic session id, recorded-by version, terminal size,
-    cast file path and the SHA-256 of the cast the text was rendered
-    from, proving which evidence produced the transcript.
+    -HeaderMode Standard (default) mimics Start-Transcript: recordings
+    made by Start-InteractiveTranscript carry the engine fields (Username,
+    Machine, Process ID, PSVersion, PSEdition) in the cast header's
+    capture-time bsn block, so they are filled from the recording
+    automatically; for other casts they are blank, and each can be
+    supplied as a parameter (-UserName, -ComputerName, -ProcessId,
+    -PSVersion, -Edition). Host Application is derived from the cast
+    header. -HeaderMode Bsn adds the audit frame: a session id (the
+    recorded one when the cast has it), recorded-by version, terminal
+    size, cast file path and the SHA-256 of the cast the text was
+    rendered from, proving which evidence produced the transcript.
 
     -AnnotateCommands inserts recorded keystrokes ('i' events) as typed
     lines - for sessions where echo was absent (password prompts).
