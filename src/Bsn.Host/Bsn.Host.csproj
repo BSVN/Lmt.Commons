@@ -10,7 +10,27 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
+    <!-- The module ships this project's output folder as its lib/ directory and
+         loads Bsn.Host.dll with Add-Type -Path. A class library does not copy
+         its NuGet dependencies to the output by default, but Windows PowerShell
+         5.1 has none of them in the box: they have to ship next to the DLL.
+         (On PowerShell 7 the copies PowerShell itself ships are used instead.) -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <!-- JSON writing for the cast file (CastJson). This version is a floor for
+       the PowerShell 7 releases the module can record on: PowerShell 7 binds
+       Bsn.Host.dll to the System.Text.Json it ships with, and only when that
+       is at least as new as the version referenced here (10.0.0.0 ships with
+       PowerShell 7.6; Test-BsnCastJsonLibrary checks it before a recording).
+       Windows PowerShell 5.1 has none and uses the copies this project puts
+       in lib/, which have to satisfy every reference at exactly the
+       referenced version, because a PowerShell session has no binding
+       redirects. A new major version is a compatibility decision (see
+       AGENTS.md), not a routine update. -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="10.0.15" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Test sources under tests/ (Pester .ps1 and the NUnit C# project) must

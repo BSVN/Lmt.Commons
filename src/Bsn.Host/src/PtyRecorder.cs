@@ -466,6 +466,7 @@ namespace Bsn.Host.Interop
         private StreamWriter writer;
         private readonly object sync = new object();
         private int castVersion;
+        private int timeDecimals;
         private double previousElapsed;
         private Decoder outputDecoder;
         private Decoder inputDecoder;
@@ -484,6 +485,9 @@ namespace Bsn.Host.Interop
             // data - a 0-byte cast or truncated final event (issue #6).
             writer.AutoFlush = true;
             this.castVersion = castVersion;
+            // v3 events carry intervals with millisecond precision, v2 events
+            // absolute times with microsecond precision.
+            this.timeDecimals = (castVersion == 3) ? 3 : 6;
             previousElapsed = 0.0;
             // Persistent decoders: handle multi-byte UTF-8 sequences that span
             // chunk boundaries without corrupting them to U+FFFD (issue #5).
@@ -495,43 +499,13 @@ namespace Bsn.Host.Interop
             {
                 title = title + " (input captured)";
             }
-            // Capture-time audit metadata (the "bsn" header block). AuditMetadata
-            // serializes and escapes itself, so only well-formed JSON is ever
-            // spliced into the header; a null object, or one that carries no
-            // value, leaves the block out.
-            string metadataFragment = string.Empty;
-            if (auditMetadata != null)
-            {
-                string metadataJson = auditMetadata.ToHeaderJson();
-                if (metadataJson.Length > 0)
-                {
-                    metadataFragment = ", \"bsn\": " + metadataJson;
-                }
-            }
-            if (castVersion == 3)
-            {
-                // asciicast v3 header: version + term{cols,rows} are required.
-                writer.WriteLine("{\"version\": 3, \"term\": {\"cols\": " + width.ToString(CultureInfo.InvariantCulture)
-                    + ", \"rows\": " + height.ToString(CultureInfo.InvariantCulture)
-                    + ", \"type\": \"xterm-256color\"}"
-                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"command\": \"" + JsonText.Escape(shellName) + "\""
-                    + ", \"title\": \"" + JsonText.Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + JsonText.Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
-                    + metadataFragment + "}");
-            }
-            else
-            {
-                writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
-                    + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
-                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"title\": \"" + JsonText.Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + JsonText.Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}"
-                    + metadataFragment + "}");
-            }
+            // The header line is written by the JSON writer both recording
+            // engines share (CastJson), which also writes the audit metadata
+            // block and leaves it out for a null object or an empty one.
+            writer.WriteLine(CastJson.Header(castVersion, width, height, timestamp, shellName, title, auditMetadata));
         }
 
-        private string FormatTime(double seconds)
+        private double EventTime(double seconds)
         {
             if (castVersion == 3)
             {
@@ -539,9 +513,9 @@ namespace Bsn.Host.Interop
                 double interval = seconds - previousElapsed;
                 if (interval < 0) { interval = 0; }
                 previousElapsed = seconds;
-                return interval.ToString("0.###", CultureInfo.InvariantCulture);
+                return interval;
             }
-            return seconds.ToString("0.######", CultureInfo.InvariantCulture);
+            return seconds;
         }
 
         public void WriteEvent(double seconds, bool isInput, byte[] chunk)
@@ -560,22 +534,20 @@ namespace Bsn.Host.Interop
                 text = outputQueryFilter.Filter(text);
             }
 
-            string escaped = JsonText.Escape(text);
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + escaped + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, isInput ? "i" : "o", text));
             }
         }
 
         public void WriteResize(double seconds, int width, int height)
         {
+            string size = width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture);
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"r\", \"" + width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture) + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, "r", size));
             }
         }
 
@@ -584,8 +556,7 @@ namespace Bsn.Host.Interop
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"x\", \"" + exitCode.ToString(CultureInfo.InvariantCulture) + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, "x", exitCode.ToString(CultureInfo.InvariantCulture)));
             }
         }
 
@@ -601,7 +572,7 @@ namespace Bsn.Host.Interop
                     string filterTail = outputQueryFilter.FlushRemaining();
                     if (filterTail.Length > 0)
                     {
-                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + JsonText.Escape(filterTail) + "\"]");
+                        writer.WriteLine(CastJson.Event(EventTime(previousElapsed), timeDecimals, "o", filterTail));
                     }
 
                     writer.Dispose();

@@ -18,12 +18,17 @@
     The file is written as UTF-8 without BOM with LF line endings, matching
     the asciicast specification. All number formatting is culture-invariant.
 
+    The header line and the event lines are written by the interop
+    assembly's CastJson class, the same writer the ConPTY engine uses on
+    Windows, so casts from the two engines are identical in structure and
+    escaping: each line is one compact JSON value.
+
     -AuditMetadata carries the capture-time audit metadata as one
     AuditMetadata object and is written into the header's "bsn" block.
-    The object's ToHeaderJson() method is the single definition of the
-    block's shape for both recording engines and documents which block
-    key each field fills. The block is omitted when no object is passed
-    or the object carries no values.
+    AuditMetadata is the single definition of the block's shape for both
+    recording engines and documents which block key each field fills. The
+    block is omitted when no object is passed or the object carries no
+    values.
 
     Parameters are listed below in the order the parts are written: the
     recorded stream, the cast file, the header fields, then the exit
@@ -164,25 +169,16 @@ function ConvertTo-BsnAsciicast {
     $writer = [System.IO.StreamWriter]::new($CastPath, $false, [System.Text.UTF8Encoding]::new($false))
     $writer.NewLine = "`n"
     try {
-        # Capture-time audit metadata (the "bsn" header block). The object
-        # serializes itself and owns the block's shape: an empty result
-        # (no object, or one that carries no values) leaves the block out.
-        $metadataFragment = ''
-        if ($AuditMetadata) {
-            $metadataJson = $AuditMetadata.ToHeaderJson()
-            if ($metadataJson) {
-                $metadataFragment = ', "bsn": ' + $metadataJson
-            }
-        }
-        if ($CastVersion -eq 3) {
-            $writer.WriteLine(('{{"version": 3, "term": {{"cols": {0}, "rows": {1}, "type": "xterm-256color"}}, "timestamp": {2}, "command": "{3}", "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `
-                    $Width, $Height, $timestamp, $ShellName, $metadataFragment))
-        }
-        else {
-            $writer.WriteLine(('{{"version": 2, "width": {0}, "height": {1}, "timestamp": {2}, "title": "Bsn.Host interactive transcript", "env": {{"SHELL": "{3}", "TERM": "xterm-256color"}}{4}}}' -f `
-                    $Width, $Height, $timestamp, $ShellName, $metadataFragment))
-        }
+        # Both recording engines write their header and their event lines
+        # through the interop assembly's CastJson (System.Text.Json), so a
+        # cast from the script(1) engine is built exactly like one from the
+        # ConPTY engine. A null AuditMetadata object, or one that carries
+        # no values, leaves the "bsn" block out of the header.
+        $writer.WriteLine([Bsn.Host.Interop.CastJson]::Header($CastVersion, $Width, $Height, $timestamp, $ShellName, 'Bsn.Host interactive transcript', $AuditMetadata))
 
+        # v3 events carry intervals with millisecond precision, v2 events
+        # absolute times with microsecond precision.
+        $timeDecimals = if ($CastVersion -eq 3) { 3 } else { 6 }
         $previousTime = 0.0
         # Issue #20: response-eliciting query sequences are filtered out of
         # the cast here too - Unix script(1) logs carry the same query bytes
@@ -195,33 +191,30 @@ function ConvertTo-BsnAsciicast {
             $charBuffer = [char[]]::new($castEvent.Count)
             $charCount = $decoder.GetChars($outputBytes, $castEvent.Offset, $castEvent.Count, $charBuffer, 0)
             $eventText = $queryFilter.Filter([string]::new($charBuffer, 0, $charCount))
-            $jsonText = $eventText | ConvertTo-Json -Compress
 
-            $formattedTime = if ($CastVersion -eq 3) {
-                # v3: interval since the previous event, millisecond precision (spec recommendation).
-                $interval = [math]::Round($castEvent.Time - $previousTime, 3)
-                if ($interval -lt 0) { $interval = 0 }
-                $previousTime = $castEvent.Time
-                $interval.ToString('0.###', $invariantCulture)
+            $eventTime = $castEvent.Time
+            if ($CastVersion -eq 3) {
+                # v3: interval since the previous event.
+                $eventTime = $castEvent.Time - $previousTime
+                if ($eventTime -lt 0) { $eventTime = 0 }
             }
-            else {
-                $castEvent.Time.ToString('0.######', $invariantCulture)
-            }
+            $previousTime = $castEvent.Time
 
-            $writer.WriteLine(('[{0}, "o", {1}]' -f $formattedTime, $jsonText))
+            $writer.WriteLine([Bsn.Host.Interop.CastJson]::Event($eventTime, $timeDecimals, 'o', $eventText))
         }
 
         # A trailing partial query/sequence held by the filter is real recorded
-        # content - emit it as a final event at the last known timestamp.
+        # content - emit it as a final event at the last known timestamp (an
+        # interval of zero in a v3 cast).
         $filterTail = $queryFilter.FlushRemaining()
         if ($filterTail.Length -gt 0) {
-            $formattedTime = if ($CastVersion -eq 3) { '0' } else { $previousTime.ToString('0.######', $invariantCulture) }
-            $writer.WriteLine(('[{0}, "o", {1}]' -f $formattedTime, ($filterTail | ConvertTo-Json -Compress)))
+            $tailTime = if ($CastVersion -eq 3) { 0.0 } else { $previousTime }
+            $writer.WriteLine([Bsn.Host.Interop.CastJson]::Event($tailTime, $timeDecimals, 'o', $filterTail))
         }
 
         if ($CastVersion -eq 3) {
             # v3 recordings are finalized with an 'x' exit-status event.
-            $writer.WriteLine(('[0, "x", "{0}"]' -f $ExitCode))
+            $writer.WriteLine([Bsn.Host.Interop.CastJson]::Event(0, $timeDecimals, 'x', [string]$ExitCode))
         }
     }
     finally {

@@ -1,6 +1,4 @@
-using System;
-using System.Globalization;
-using System.Text;
+using System.Text.Json;
 
 namespace Bsn.Host.Interop
 {
@@ -13,13 +11,13 @@ namespace Bsn.Host.Interop
     ///
     /// It is a .NET type so that it crosses the PowerShell/C# boundary
     /// typed: Start-InteractiveTranscript (PowerShell) fills it in once,
-    /// the engine wrappers pass it on, and both cast writers serialize it
-    /// with ToHeaderJson() - the ConPTY CastWriter in this assembly on
-    /// Windows, and ConvertTo-BsnAsciicast (PowerShell) for the script(1)
+    /// the engine wrappers pass it on, and CastJson.Header writes it into
+    /// the header for both engines - the ConPTY CastWriter in this assembly
+    /// on Windows, and ConvertTo-BsnAsciicast (PowerShell) for the script(1)
     /// engine on Unix. That makes this class the single definition of the
-    /// block's shape for both engines. Downstream readers
-    /// (ConvertTo-BsnTranscript, the audit export) parse the block from the
-    /// cast header; its key names are part of the recording format.
+    /// block's shape. Downstream readers (ConvertTo-BsnTranscript, the audit
+    /// export) parse the block from the cast header; its key names are part
+    /// of the recording format.
     /// </summary>
     public sealed class AuditMetadata
     {
@@ -46,8 +44,8 @@ namespace Bsn.Host.Interop
 
         /// <summary>
         /// Process id of the PowerShell that made the recording. Block key
-        /// "pid", written as a JSON number. Zero (the default) leaves the
-        /// key out of the block.
+        /// "pid", written as a JSON number. Zero (the default) or a negative
+        /// value leaves the key out of the block.
         /// </summary>
         public int ProcessId { get; set; }
 
@@ -64,64 +62,56 @@ namespace Bsn.Host.Interop
         public string Edition { get; set; }
 
         /// <summary>
-        /// The "bsn" block as a compact JSON object, ready to be spliced
-        /// into the cast header, for example
-        /// {"session_id":"...","recorded_by":"...","host":"..."}.
-        ///
-        /// Keys follow the fixed order of the properties above. A property
-        /// that is null or empty is left out, so a block never carries empty
-        /// values. The result is an empty string when nothing is set, which
-        /// tells the writers to leave the block out of the header entirely.
-        /// Values are escaped by the same routine the rest of the header
-        /// uses (JsonText), so the header stays one line of valid JSON
-        /// whatever the values contain.
+        /// True when no field carries a value. The cast writers leave the
+        /// "bsn" block out of the header for such an object (see IsEmpty and
+        /// WriteTo: both decide per field what counts as a value, so they
+        /// have to agree).
         /// </summary>
-        public string ToHeaderJson()
+        internal bool IsEmpty
         {
-            StringBuilder block = new StringBuilder();
-            AppendField(block, "session_id", SessionId);
-            AppendField(block, "recorded_by", RecordedBy);
-            AppendField(block, "host", ComputerName);
-            AppendField(block, "user", UserName);
+            get
+            {
+                return IsUnset(SessionId)
+                    && IsUnset(RecordedBy)
+                    && IsUnset(ComputerName)
+                    && IsUnset(UserName)
+                    && (ProcessId <= 0)
+                    && IsUnset(PSVersion)
+                    && IsUnset(Edition);
+            }
+        }
+
+        /// <summary>
+        /// Writes the fields as the members of a JSON object, in the fixed
+        /// order of the properties above and under the key names given
+        /// there. A field that is null or empty is left out, so the block
+        /// never carries empty values; "pid" is written as a JSON number and
+        /// only when it is positive. The writer has to be inside an object.
+        /// </summary>
+        internal void WriteTo(Utf8JsonWriter writer)
+        {
+            WriteStringIfSet(writer, "session_id", SessionId);
+            WriteStringIfSet(writer, "recorded_by", RecordedBy);
+            WriteStringIfSet(writer, "host", ComputerName);
+            WriteStringIfSet(writer, "user", UserName);
             if (ProcessId > 0)
             {
-                AppendFieldSeparator(block);
-                block.Append("\"pid\":").Append(ProcessId.ToString(CultureInfo.InvariantCulture));
+                writer.WriteNumber("pid", ProcessId);
             }
-            AppendField(block, "psversion", PSVersion);
-            AppendField(block, "psedition", Edition);
-
-            if (block.Length == 0)
-            {
-                return string.Empty;
-            }
-            return "{" + block.ToString() + "}";
+            WriteStringIfSet(writer, "psversion", PSVersion);
+            WriteStringIfSet(writer, "psedition", Edition);
         }
 
-        /// <summary>
-        /// Appends one "key":"value" field to block, skipping null or
-        /// empty values. key is the bare property name; both it and the
-        /// value are written as quoted, escaped JSON strings.
-        /// </summary>
-        private static void AppendField(StringBuilder block, string key, string value)
+        private static bool IsUnset(string value)
         {
-            if (string.IsNullOrEmpty(value))
-            {
-                return;
-            }
-            AppendFieldSeparator(block);
-            block.Append(JsonText.Quote(key)).Append(':').Append(JsonText.Quote(value));
+            return string.IsNullOrEmpty(value);
         }
 
-        /// <summary>
-        /// Appends the comma that separates two fields, unless block is
-        /// still empty (the field being appended is the first one).
-        /// </summary>
-        private static void AppendFieldSeparator(StringBuilder block)
+        private static void WriteStringIfSet(Utf8JsonWriter writer, string key, string value)
         {
-            if (block.Length > 0)
+            if (!IsUnset(value))
             {
-                block.Append(',');
+                writer.WriteString(key, value);
             }
         }
     }

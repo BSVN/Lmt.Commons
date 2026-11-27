@@ -4,7 +4,7 @@
 # Explicitly ignored: C# sources that cannot be unit tested (P/Invoke against
 # kernel32 and the ConPTY engine, Win32 power-management interop). They are
 # gated by CodeQL, the .NET build and PSScriptAnalyzer instead. The testable
-# C# (TerminalQueryFilter.cs, AuditMetadata.cs, JsonText.cs) is NOT ignored - it is measured through the
+# C# (TerminalQueryFilter.cs, AuditMetadata.cs, CastJson.cs) is NOT ignored - it is measured through the
 # NUnit suite in src/Bsn.Host/tests/csharp.
 ignore:
   - "src/Bsn.Host/src/PtyRecorder.cs"

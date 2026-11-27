@@ -1141,9 +1141,16 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
             ([regex]::Matches($castText, [regex]::Escape([string][char]0x256D))).Count | Should -BeGreaterThan 0 -Because 'the top-left rounded corner must survive'
             ([regex]::Matches($castText, [regex]::Escape([string][char]0x256F))).Count | Should -BeGreaterThan 0 -Because 'the bottom-right rounded corner must survive'
 
-            # The queries must NOT be in the cast (stored JSON-escaped: ESC is \u001b).
-            foreach ($escapedQuery in @('\u001b[14t', '\u001b[6n', '\u001b[?u', '\u001b[>0q', '\u001b]11;?', '\u001b]10;?')) {
-                $castText.Contains($escapedQuery) | Should -BeFalse -Because ("the cast must not contain the query sequence {0} - playback would elicit a terminal response into the console input buffer (issue #20)" -f $escapedQuery)
+            # The queries must NOT be in the cast (stored JSON-escaped: ESC is \u001B).
+            # Checked on the decoded events, so the assertion does not depend
+            # on how the JSON writer spells the escape.
+            $esc = [string][char]27
+            $decoded = (@(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process {
+                        $castEvent = $_ | ConvertFrom-Json
+                        [string]$castEvent[2]
+                    }) -join '')
+            foreach ($query in @("$esc[14t", "$esc[6n", "$esc[?u", "$esc[>0q", "$esc]11;?", "$esc]10;?")) {
+                $decoded.Contains($query) | Should -BeFalse -Because ("the cast must not contain the query sequence {0} - playback would elicit a terminal response into the console input buffer (issue #20)" -f [regex]::Escape($query))
             }
 
             # Filtering must not introduce corruption of its own.

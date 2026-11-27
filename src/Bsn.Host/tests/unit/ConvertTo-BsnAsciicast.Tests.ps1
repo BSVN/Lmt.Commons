@@ -40,7 +40,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -Width 100 -Height 40 } $OutputPath $TimingPath $CastPath
 
-            $script:CastLines = Get-Content -LiteralPath $CastPath
+            $script:CastLines = Get-Content -LiteralPath $CastPath -Encoding UTF8
         }
 
         It 'writes the asciicast v2 header with the requested size' {
@@ -72,7 +72,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $specialOutputPath $specialTimingPath $specialCastPath
 
-            $castEvent = (Get-Content -LiteralPath $specialCastPath | Select-Object -Skip 1 -First 1) | ConvertFrom-Json
+            $castEvent = (Get-Content -LiteralPath $specialCastPath -Encoding UTF8 | Select-Object -Skip 1 -First 1) | ConvertFrom-Json
             $castEvent[2] | Should -Be $expectedText
         }
     }
@@ -86,7 +86,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $c) ConvertTo-BsnAsciicast -OutputPath $o -CastPath $c -DurationSec 2.0 } $outputPath $castPath
 
-            $events = @(Get-Content -LiteralPath $castPath | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events = @(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
             $events.Count | Should -Be 3
             $events[0][0] | Should -Be 0
             $events[1][0] | Should -Be 1
@@ -107,7 +107,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -ExitCode 7 -ShellName 'pwsh' } $outputPath $timingPath $castPath
 
-            $castLines = Get-Content -LiteralPath $castPath
+            $castLines = Get-Content -LiteralPath $castPath -Encoding UTF8
             $header = $castLines[0] | ConvertFrom-Json
             $header.version | Should -Be 3
             $header.term.cols | Should -Be 80
@@ -140,6 +140,29 @@ Describe 'ConvertTo-BsnAsciicast' {
             $castBytes[0] | Should -Not -Be 0xEF
             [System.Text.Encoding]::UTF8.GetString($castBytes).Contains("`r`n") | Should -BeFalse
         }
+
+        It 'writes its lines in the same compact JSON as the ConPTY engine' {
+            # Both engines write through the interop assembly's CastJson, so
+            # a script(1) cast is laid out exactly like a ConPTY cast. The
+            # literals are the ones the assembly's NUnit tests pin
+            # (CastJsonTests); non-ASCII stays raw UTF-8 rather than turning
+            # into \uXXXX escapes.
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'compact.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'compact.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'compact.cast'
+
+            $eAcute = [string][char]0x00E9
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes($eAcute))
+            Set-Content -LiteralPath $timingPath -Value '+0.5 2' -NoNewline
+
+            $metadata = [Bsn.Host.Interop.AuditMetadata]@{ UserName = 'jdoe' }
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $m) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $m } $outputPath $timingPath $castPath $metadata
+
+            $castLines = Get-Content -LiteralPath $castPath -Encoding UTF8
+            $castLines.Count | Should -Be 2
+            $castLines[0] | Should -BeLike '{"version":2,"width":80,"height":24,"timestamp":*,"title":"Bsn.Host interactive transcript","env":{"SHELL":"shell","TERM":"xterm-256color"},"bsn":{"user":"jdoe"}}'
+            $castLines[1] | Should -Be ('[0.5,"o","' + $eAcute + '"]')
+        }
     }
 
     Context 'multi-byte UTF-8 survives chunk boundaries (issue #5)' {
@@ -161,7 +184,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
 
-            $castLines = Get-Content -LiteralPath $castPath | Select-Object -Skip 1
+            $castLines = Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1
             foreach ($line in $castLines) {
                 $castEvent = $line | ConvertFrom-Json
                 $eventText = $castEvent[2]
@@ -183,7 +206,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             $fileInfo = Get-Item -LiteralPath $castPath
             $fileInfo.Length | Should -BeGreaterThan 0
-            $firstLine = Get-Content -LiteralPath $castPath -TotalCount 1
+            $firstLine = Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1
             $firstLine | Should -BeLike '*"version"*'
         }
     }
@@ -198,7 +221,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $script:FullMetadata
 
-            $headerLine = Get-Content -LiteralPath $castPath -TotalCount 1
+            $headerLine = Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1
             $header = $headerLine | ConvertFrom-Json
             $header.bsn.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
             $header.bsn.recorded_by | Should -Be 'bsn.host 0.3.0'
@@ -222,7 +245,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion 3 -AuditMetadata $metadata } $outputPath $timingPath $castPath $script:FullMetadata
 
-            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header = (Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 3
             $header.bsn.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
             $header.bsn.host | Should -Be 'ws01'
@@ -238,7 +261,7 @@ Describe 'ConvertTo-BsnAsciicast' {
 
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
 
-            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header = (Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1) | ConvertFrom-Json
             $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
         }
 
@@ -252,7 +275,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             $emptyMetadata = [Bsn.Host.Interop.AuditMetadata]::new()
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $emptyMetadata
 
-            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header = (Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 2
             $header.PSObject.Properties['bsn'] | Should -BeNullOrEmpty
         }
@@ -267,7 +290,7 @@ Describe 'ConvertTo-BsnAsciicast' {
             $partialMetadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'gid'; UserName = 'jdoe' }
             & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $metadata) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -AuditMetadata $metadata } $outputPath $timingPath $castPath $partialMetadata
 
-            $header = (Get-Content -LiteralPath $castPath -TotalCount 1) | ConvertFrom-Json
+            $header = (Get-Content -LiteralPath $castPath -Encoding UTF8 -TotalCount 1) | ConvertFrom-Json
             $header.version | Should -Be 2
             (@($header.bsn.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,user'
         }
@@ -309,23 +332,63 @@ Describe 'ConvertTo-BsnAsciicast' {
             $castText.Contains('END-MARKER') | Should -BeTrue
             ([regex]::Matches($castText, [regex]::Escape($box))).Count | Should -Be 30
 
-            # Queries are gone (stored JSON-escaped: ESC is \u001b).
-            foreach ($escapedQuery in @('\u001b[14t', '\u001b[6n', '\u001b[?u', '\u001b[>0q', '\u001b]11;?')) {
-                $castText.Contains($escapedQuery) | Should -BeFalse -Because ("converted casts must not contain the query sequence {0} (issue #20)" -f $escapedQuery)
+            # Queries are gone. This is checked on the decoded events: ESC is
+            # stored JSON-escaped (as \u001B), so searching the file text
+            # would tie the test to how the JSON writer spells the escape.
+            $decoded = (@(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process {
+                        $castEvent = $_ | ConvertFrom-Json
+                        [string]$castEvent[2]
+                    }) -join '')
+            foreach ($query in @("$esc[14t", "$esc[6n", "$esc[?u", "$esc[>0q", "$esc]11;?")) {
+                $decoded.Contains($query) | Should -BeFalse -Because ("converted casts must not contain the query sequence {0} (issue #20)" -f [regex]::Escape($query))
             }
 
             # No new corruption introduced by the filter.
             ([regex]::Matches($castText, [regex]::Escape([string][char]0xFFFD))).Count | Should -Be 0
+        }
+
+        It 'keeps a partial sequence cut off by the end of the output as a final event (issue #20)' {
+            # Output that ends in the middle of a sequence leaves the tail in
+            # the filter until the stream ends. It is real recorded content
+            # (here a lone ESC) and becomes one last event: at the time of
+            # the previous event in a v2 cast, with a zero interval in v3.
+            $esc = [string][char]27
+            foreach ($castVersion in 2, 3) {
+                $outputPath = Join-Path -Path $TestDrive -ChildPath ('tail-v{0}.log' -f $castVersion)
+                $timingPath = Join-Path -Path $TestDrive -ChildPath ('tail-v{0}.timing' -f $castVersion)
+                $castPath = Join-Path -Path $TestDrive -ChildPath ('tail-v{0}.cast' -f $castVersion)
+                [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes('END' + $esc))
+                Set-Content -LiteralPath $timingPath -Value '+0.25 4' -NoNewline
+
+                & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c, $v) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c -CastVersion $v } $outputPath $timingPath $castPath $castVersion
+
+                $events = @(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+                $events[0][0] | Should -Be 0.25
+                $events[0][2] | Should -Be 'END'
+                $events[1][1] | Should -Be 'o'
+                $events[1][2] | Should -Be $esc
+                if ($castVersion -eq 3) {
+                    # v3: the tail, then the exit event, both after a zero interval.
+                    $events.Count | Should -Be 3
+                    $events[1][0] | Should -Be 0
+                    $events[2][1] | Should -Be 'x'
+                }
+                else {
+                    $events.Count | Should -Be 2
+                    $events[1][0] | Should -Be 0.25
+                }
+            }
         }
     }
 }
 
 Describe 'AuditMetadata from PowerShell' {
     # AuditMetadata is the interop assembly's type for the capture-time
-    # audit metadata; its block format is pinned byte for byte by the
-    # assembly's own NUnit tests (AuditMetadataTests). These cover the
-    # PowerShell side of the contract: Start-InteractiveTranscript fills
-    # the object in from PowerShell, and the Unix cast writer serializes it.
+    # audit metadata; the block it becomes in a cast header is pinned byte
+    # for byte by the assembly's own NUnit tests (AuditMetadataTests). These
+    # cover the PowerShell side of the contract: Start-InteractiveTranscript
+    # fills the object in from PowerShell, and the Unix cast writer hands it
+    # to CastJson.Header().
     It 'is created from a hashtable by property name' {
         $metadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'guid-1'; UserName = 'jdoe'; ProcessId = 4242 }
 
@@ -334,10 +397,10 @@ Describe 'AuditMetadata from PowerShell' {
         $metadata.ProcessId | Should -Be 4242
     }
 
-    It 'serializes every property to its block key, with pid as a number' {
-        $result = $script:FullMetadata.ToHeaderJson()
+    It 'is written into the header with every property under its block key, pid as a number' {
+        $headerLine = [Bsn.Host.Interop.CastJson]::Header(2, 80, 24, 1793895000, 'shell', 'title', $script:FullMetadata)
 
-        $block = $result | ConvertFrom-Json
+        $block = ($headerLine | ConvertFrom-Json).bsn
         (@($block.PSObject.Properties.Name) -join ',') | Should -Be 'session_id,recorded_by,host,user,pid,psversion,psedition'
         $block.session_id | Should -Be '0f8a1b2c-3d4e-4f50-8192-a3b4c5d6e7f8'
         $block.recorded_by | Should -Be 'bsn.host 0.3.0'
@@ -346,20 +409,25 @@ Describe 'AuditMetadata from PowerShell' {
         $block.pid | Should -Be 4242
         $block.psversion | Should -Be '7.6.9'
         $block.psedition | Should -Be 'Core'
-        $result.Contains('"pid":4242') | Should -BeTrue -Because 'pid must be a JSON number, not a string'
+        $headerLine.Contains('"pid":4242') | Should -BeTrue -Because 'pid must be a JSON number, not a string'
     }
 
-    It 'serializes to an empty string when no property is set' {
-        ([Bsn.Host.Interop.AuditMetadata]::new()).ToHeaderJson() | Should -Be ''
+    It 'leaves the block out when no metadata object is given or no property is set' {
+        $headerLine = [Bsn.Host.Interop.CastJson]::Header(2, 80, 24, 1793895000, 'shell', 'title', [Bsn.Host.Interop.AuditMetadata]::new())
+
+        ($headerLine | ConvertFrom-Json).PSObject.Properties['bsn'] | Should -BeNullOrEmpty
+        $headerLine | Should -Be ([Bsn.Host.Interop.CastJson]::Header(2, 80, 24, 1793895000, 'shell', 'title', $null))
     }
 
-    It 'keeps the result one line of valid JSON for values that need escaping' {
+    It 'keeps the header one line of valid JSON for values that need escaping' {
         $awkwardValue = 'Do"e\J' + [char]10 + [char]27 + 'x'
         $metadata = [Bsn.Host.Interop.AuditMetadata]@{ SessionId = 'guid-1'; UserName = $awkwardValue }
 
-        $result = $metadata.ToHeaderJson()
-        $result.Contains([string][char]10) | Should -BeFalse -Because 'the value is spliced into the single header line'
-        $result.Contains([string][char]13) | Should -BeFalse
-        ($result | ConvertFrom-Json).user | Should -Be $awkwardValue
+        $headerLine = [Bsn.Host.Interop.CastJson]::Header(2, 80, 24, 1793895000, 'shell', 'title', $metadata)
+
+        $headerLine.Contains([string][char]10) | Should -BeFalse -Because 'the value goes into the single header line'
+        $headerLine.Contains([string][char]13) | Should -BeFalse
+        $headerLine.Contains([string][char]27) | Should -BeFalse
+        ($headerLine | ConvertFrom-Json).bsn.user | Should -Be $awkwardValue
     }
 }
