@@ -52,7 +52,8 @@ windows/ubuntu/macos, CodeQL, SonarCloud quality gate):
   whole module folder including tests. Keep `.ps1` / `.psm1` files ASCII-only.
 - **Cross-edition compatibility**: code must work under Windows PowerShell
   5.1 and PowerShell 7 (see [AGENTS.md](AGENTS.md) for the known pitfalls,
-  e.g. `Set-StrictMode` guards and no piping out of `foreach` statements).
+  e.g. `Set-StrictMode` guards, no piping out of `foreach` statements, and
+  reading UTF-8 files with `-Encoding UTF8`).
 - **Tests live inside each module** at `src/<Module>/tests/*.Tests.ps1`.
   Never write tests that suspend, sleep, or reboot a real machine - all
   suspend-path tests are mocked.
@@ -72,7 +73,11 @@ windows/ubuntu/macos, CodeQL, SonarCloud quality gate):
   not a per-import opt-in. Existing published names are grandfathered.
 - C# interop code lives in real .NET projects per module; keep it
   warning-free for netstandard2.0. New testable C# goes in its own covered
-  file under `src/Bsn.Host/tests/csharp`.
+  file under `src/Bsn.Host/tests/csharp`. A NuGet dependency ships with the
+  module, and the version of a library that PowerShell itself ships with
+  decides which PowerShell 7 releases the feature still runs on: read the
+  NuGet rules in [AGENTS.md](AGENTS.md) before adding or bumping one, and
+  list bundled assemblies in the module's `THIRD-PARTY-NOTICES.txt`.
 - Shared helpers belong in `src/Bsn.Common`, not duplicated in consumers.
 
 ## Submitting changes

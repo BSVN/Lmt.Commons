@@ -315,6 +315,42 @@ Describe 'Start-InteractiveTranscript' {
                 Set-ItResult -Skipped -Because 'requires exactly one redirected handle.'
             }
         }
+
+        It 'fails before recording when PowerShell ships an older System.Text.Json than the cast writer needs' {
+            # What PowerShell 7.4 looks like next to a cast writer built against
+            # System.Text.Json 10.0 - without needing that release at hand.
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '8.0.0.0' -PowerShellVersion '7.4.22' } } |
+                Should -Throw '*System.Text.Json 10.0.0.0 or newer*PowerShell 7.4.22*ships 8.0.0.0*'
+        }
+
+        It 'accepts a PowerShell that ships the System.Text.Json the cast writer needs, or newer' {
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '10.0.0.0' -PowerShellVersion '7.6.0' } } | Should -Not -Throw
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '11.0.0.0' -PowerShellVersion '7.7.0' } } | Should -Not -Throw
+        }
+
+        It 'checks the System.Text.Json of the running PowerShell against the copy the module ships' {
+            Mock -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' { }
+
+            # Run the pre-flight for the real platform. Whatever it then says
+            # about redirected standard I/O is not this test's concern.
+            try {
+                & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform (Get-BsnOperatingSystem) }
+            }
+            catch {
+                $null = $_
+            }
+
+            if ($PSVersionTable.PSEdition -eq 'Core') {
+                $moduleJsonVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path -Path (Join-Path -Path $moduleRoot -ChildPath 'lib') -ChildPath 'System.Text.Json.dll')).Version
+                $inBoxJsonVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path -Path $PSHOME -ChildPath 'System.Text.Json.dll')).Version
+                Should -Invoke -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { ($RequiredVersion -eq $moduleJsonVersion) -and ($AvailableVersion -eq $inBoxJsonVersion) }
+            }
+            else {
+                # Windows PowerShell 5.1 has no System.Text.Json of its own: the
+                # module's shipped copy is used, and there is nothing to compare.
+                Should -Invoke -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' -Times 0 -Exactly -Scope It
+            }
+        }
     }
 
     Context 'command encoding preserves shell metacharacters (issue #7)' {

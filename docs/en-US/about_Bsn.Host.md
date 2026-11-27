@@ -81,6 +81,16 @@ while recording (the live proxy writes UTF-8 bytes) and restored
 afterwards, so the live view renders byte-writing TUIs correctly even on
 OEM-codepage consoles such as `cmd` or the Windows PowerShell 5.1 host.
 
+Recording runs on Windows PowerShell 5.1 and on PowerShell 7.6 or later.
+Cast files are written with System.Text.Json, and each edition supplies
+that library from where it has it: Windows PowerShell 5.1 has none, so
+the module ships a copy in `lib/` (listed in the module's
+`THIRD-PARTY-NOTICES.txt`); PowerShell 7 uses the copy it ships with,
+which has to be at least the version the module was built against. On
+PowerShell 7.0 to 7.5 the cmdlets that read, play and convert recordings
+keep working, and `Start-InteractiveTranscript` fails before anything is
+recorded, with a message that says why.
+
 ## Scenarios
 
 - Audit and compliance records of privileged interactive sessions
@@ -94,7 +104,9 @@ Implements the community request tracked in
 following the parameter and format semantics of
 [PowerShell-RFC#421](https://github.com/PowerShell/PowerShell-RFC/pull/421)
 at module scope. The C# ConPTY engine ships as a compiled assembly
-(`lib/Bsn.Host.dll`); shared helpers live in the
+(`lib/Bsn.Host.dll`), which writes cast files with System.Text.Json (see
+[Platform support and requirements](#platform-support-and-requirements));
+shared helpers live in the
 [Bsn.Common](about_Bsn.Common.md) module.
 
 ## See also

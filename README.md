@@ -108,6 +108,11 @@ registration step needed.
 Requirements: PowerShell 5.1+ (7+ recommended). CI runs analysis and tests on
 Windows, Linux and macOS for every push and pull request.
 
+Recording with `Bsn.Host` needs Windows PowerShell 5.1 or PowerShell 7.6 or
+later: its cast writer binds the System.Text.Json that PowerShell 7 ships
+with. On PowerShell 7.0 to 7.5 the recording cmdlet says so; the cmdlets
+that read and convert recordings keep working.
+
 ## Publishing to the PowerShell Gallery
 
 Publishing is fully automated through GitHub Releases:

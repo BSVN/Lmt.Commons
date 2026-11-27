@@ -69,9 +69,8 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   still overriding; the audit converters consume the same block. Both
   engines stamp the block from one typed object, `AuditMetadata` in the
   interop assembly: `Start-InteractiveTranscript` creates it, the engine
-  wrappers pass it on as `-AuditMetadata`, and its `ToHeaderJson()`
-  serializes it with the same escaping as the rest of the header
-  (Windows: the ConPTY `CastWriter`; Unix: the `script(1)` conversion).
+  wrappers pass it on as `-AuditMetadata`, and the cast writer both
+  engines share writes it into the header.
 - `ConvertTo-BsnTranscript`: converts an asciicast (.cast) recording
   into a Start-Transcript-style plain-text transcript - the readable,
   auditor-facing rendering of the recorded evidence (issue #22). The
@@ -152,6 +151,29 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   `tools/Build-AllDocs.ps1`/`tools/Build-DocsSite.ps1`; pull requests
   still gate only the `main` set.
   [#29](https://github.com/BSVN/Lmt.Commons/issues/29)
+
+### Changed
+
+- **Recording on PowerShell 7 now needs PowerShell 7.6 or later.** The
+  interop assembly takes System.Text.Json from NuGet to write cast files,
+  and PowerShell 7 binds an assembly to the System.Text.Json it ships
+  itself with - and only when that is at least the version the assembly
+  was built against. PowerShell 7.0 to 7.5 ship older ones (7.4 ships
+  8.0.0), so `Start-InteractiveTranscript` fails there before anything is
+  recorded, with a message that says why; the cmdlets that read, play and
+  convert recordings keep working. Windows PowerShell 5.1 is not
+  affected: it has no System.Text.Json, so the module ships one in
+  `lib/`. An older package version was not an option, because the
+  releases before 10.0 only load on .NET Framework through binding
+  redirects, which a PowerShell session does not provide.
+- Cast files are written with System.Text.Json (`CastJson`, one writer
+  for both engines) as compact JSON: `[0.5,"o","x"]` instead of
+  `[0.5, "o", "x"]`, and control characters as `\u001B` rather than
+  `\u001b`. The content is the same and every asciicast reader accepts
+  it; casts from the two engines are now alike in structure and escaping.
+- The Bsn.Host package grows by about 1.3 MB: it now carries the .NET
+  assemblies System.Text.Json depends on, listed in the module's
+  `THIRD-PARTY-NOTICES.txt`.
 
 ## [Bsn.Host 0.2.3] - 2026-11-07
 

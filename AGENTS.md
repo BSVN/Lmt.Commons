@@ -83,6 +83,10 @@ before:
   containers fail with "Container cannot be copied onto existing leaf item".
 - Pester: config lives under `New-PesterConfiguration`; `Run.TestSuiteName`
   does not exist in 5.9.x (don't use it).
+- `Get-Content` without `-Encoding UTF8` reads a BOM-less UTF-8 file as
+  ANSI on 5.1, which turns the non-ASCII text cast files carry into
+  mojibake - silently, so a test can pass for the wrong reason. Read
+  them with `-Encoding UTF8` or `File.ReadAllLines`/`ReadAllText`.
 
 ## Module-specific constraints
 
@@ -100,6 +104,42 @@ before:
   shipped versions must carry distinct assembly versions);
   `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
   here-strings inside .ps1 files.
+- NuGet dependencies of an interop project ship with the module, and the
+  PowerShell edition decides which copy is used. The rules below were all
+  verified against real releases; do not take them on faith from a green CI:
+  - `CopyLocalLockFileAssemblies` puts every dependency DLL in
+    `src/<Module>/lib/` (a class library does not copy them by default).
+  - PowerShell 7 binds the interop DLL to the library IT ships with, and
+    only when that is at least the version the DLL references. The package
+    version is therefore the floor for the PowerShell 7 releases the
+    feature can run on: System.Text.Json 10.0.x (assembly 10.0.0.0) needs
+    PowerShell 7.6+, the 8.0 line 7.4+, the 6.0 line 7.2+. On an older
+    release `Import-Module` still succeeds and the first use fails with
+    "Unable to find type ...", so Bsn.Host checks it before recording
+    (`Test-BsnCastJsonLibrary`) and documents the requirement. A test pins
+    the major version: moving it is a decision, not a Dependabot bump.
+  - Windows PowerShell 5.1 has none of these libraries: it uses the copies
+    in `lib/`, and .NET Framework binds every reference to exactly that
+    version, because a PowerShell session has no binding redirects. The
+    shipped set must satisfy every reference at exactly the referenced
+    version. The System.Text.Json lines before 10.0 do not (they rely on
+    redirects), and NuGet refuses the package versions that would close
+    them. The test "ships every dependency at exactly the version the
+    assemblies reference" pins it, and the test that runs Windows
+    PowerShell 5.1 in a child process proves the real load, because CI
+    only runs pwsh.
+  - Code that runs on both editions may only use members that exist in the
+    referenced version, and must not let the library format numbers: the
+    copy that ships to .NET Framework prints 0.1 as 0.10000000000000001.
+    `CastJson` formats numbers itself.
+  - CI's `pwsh` is always the newest release, where everything binds, so a
+    binding problem on older releases is invisible there. Before changing
+    a package version, run the module under the real oldest release that
+    must keep working (the portable zip of a release runs from any
+    folder).
+  - List bundled third-party assemblies in a `THIRD-PARTY-NOTICES.txt` in
+    the module folder: their licenses (the MIT license, for one) require
+    shipping the notice with copies.
 - Shared helpers are factored into `src/Bsn.Common` (required by the other
   modules via RequiredModules, the Az/VMware-style dependency chain):
   `Get-BsnOperatingSystem` returns the native PowerShell `BsnOperatingSystem`
@@ -163,10 +203,14 @@ before:
   `[Console]` output through the console output codepage, which turns
   CP437-unrepresentable characters into '?'). Cast files support asciicast
   v2 (absolute event times) and v3 (intervals since the previous event,
-  millisecond precision, trailing 'x' exit event) - keep both writers in
-  sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and
-  `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
-  logic - extend tests there rather than smoke-testing the native engine.
+  millisecond precision, trailing 'x' exit event). Both engines write
+  their header and event lines through `CastJson`
+  (`src/Bsn.Host/src/CastJson.cs`, System.Text.Json, pinned by the NUnit
+  `CastJsonTests`): one compact JSON value per line, numbers formatted by
+  the class itself - do not assemble cast lines by hand in either engine.
+  `ConvertTo-BsnAsciicast` and `Get-BsnCastTimeline` are the pure,
+  Pester-tested conversion/parsing logic - extend tests there rather than
+  smoke-testing the native engine.
   Unix script(1) invocation: the engine PROBES the installed script(1)
   binary (Get-BsnScriptInvocationArguments) because util-linux 2.39+
   (Ubuntu 24.04/26.04) rejects combining `--log-out` with a trailing
@@ -179,13 +223,14 @@ before:
   ubuntu-latest so two util-linux generations are covered.
 - Cast header audit metadata (the `bsn` block a recording stamps with
   who ran the session, where, and which module and PowerShell recorded
-  it) has ONE definition: `AuditMetadata.ToHeaderJson()` in
-  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type whose
-  output is pinned byte for byte by the NUnit `AuditMetadataTests`. Do
-  not hand-build the block: `Start-InteractiveTranscript` creates the
-  object, the engine wrappers take it as `-AuditMetadata` (the ConPTY
-  engine receives the typed object, not JSON text), and both cast
-  writers only call `ToHeaderJson()`. Readers probe the block key by
+  it) has ONE definition: `AuditMetadata` in
+  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type that
+  `CastJson.Header` writes into the header; its output is pinned byte for
+  byte by the NUnit `AuditMetadataTests`. Do not hand-build the block:
+  `Start-InteractiveTranscript` creates the object, the engine wrappers
+  take it as `-AuditMetadata` (the ConPTY engine receives the typed
+  object, not JSON text), and both cast writers hand it to
+  `CastJson.Header`. Readers probe the block key by
   key with `Get-BsnObjectProperty`, and casts without it must keep
   converting. A new field therefore touches the C# property and its
   NUnit cases, the gather site in `Start-InteractiveTranscript`, and
@@ -277,10 +322,15 @@ before:
   (`PtyRecorder.cs` ConPTY engine/CastWriter/console P/Invoke,
   `PowerProf.cs` Win32 interop) - do not replace those explicit
   per-file ignores with a blanket C# ignore, and keep new testable C#
-  in its own covered file (e.g. `TerminalQueryFilter.cs`).
+  in its own covered file (e.g. `TerminalQueryFilter.cs`, `CastJson.cs`).
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
-  `ci`); dormant nuget entries per csproj for future PackageReferences.
+  `ci`); weekly nuget updates per interop project (live for Bsn.Host's
+  System.Text.Json, dormant for Bsn.SystemManagement until it takes a
+  package). A major bump of System.Text.Json raises the PowerShell 7
+  floor of Bsn.Host (see the NuGet rules above) and fails the test that
+  pins the major version: treat it as a compatibility decision, not a
+  routine update.
   PowerShell module deps (Pester etc.) have no Dependabot ecosystem -
   MinimumVersion gates in the bootstrap are the manual mechanism, and the
   same applies to the DocFX tool pinned in `.config/dotnet-tools.json`
