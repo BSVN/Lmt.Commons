@@ -19,6 +19,11 @@
     their log as it goes, so a recording that is stopped keeps everything
     the session printed before the stop.
 
+    When the calling process has no terminal on its standard input, it is
+    at its end right away; script(1) is then given an input pipe that stays
+    open, so that BSD script(1) does not send an end-of-file character into
+    the session, which the terminal would echo into the recording.
+
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
 
@@ -131,13 +136,11 @@ function Start-BsnUnixPtyRecording {
             $rawPath = [System.IO.Path]::GetTempFileName()
             $temporaryPaths = @($rawPath)
 
-            # BSD script (macOS) has no -c option: it runs the command that
-            # follows the typescript file itself. Its log is flushed every
-            # 30 seconds by default, so a recording that is stopped (the
-            # engine kills script(1)) would lose up to that much output:
-            # -t 0 flushes after every write, like -f does on util-linux. BSD
-            # script has no -c option: it runs the command given after the
-            # typescript file itself.
+            # BSD script (macOS) has no -c option: it runs the command given
+            # after the typescript file itself. Its log is flushed every 30
+            # seconds by default, so a recording that is stopped (the engine
+            # kills script(1)) would lose up to that much output: -t 0
+            # flushes after every write, like -f does on util-linux.
             $recordee = if ($Command) { @('/bin/sh', '-c', $Command) } else { @(Get-BsnDefaultShell) }
             $scriptArguments = @('-q', '-t', '0', $rawPath) + $recordee
         }
@@ -145,8 +148,21 @@ function Start-BsnUnixPtyRecording {
             $processInfo.ArgumentList.Add($scriptArgument)
         }
 
+        # When the caller's input is not a terminal (CI, a scheduled job) it
+        # is at its end right away. BSD script(1) answers that by sending
+        # the end-of-file character into the session, where the terminal
+        # echoes it as "^D" into the recording; util-linux only stops
+        # forwarding. script(1) then gets an input pipe that stays open
+        # instead: what the caller pipes in is forwarded, and no end-of-file
+        # reaches the session. With a terminal as input, script(1) reads it
+        # itself.
+        $processInfo.RedirectStandardInput = [Console]::IsInputRedirected
+
         Write-Verbose -Message ("Recording via: {0} {1}" -f $processInfo.FileName, ($scriptArguments -join ' '))
         $recordingProcess = [System.Diagnostics.Process]::Start($processInfo)
+        if ($processInfo.RedirectStandardInput) {
+            $null = [Console]::OpenStandardInput().CopyToAsync($recordingProcess.StandardInput.BaseStream)
+        }
         try {
             while (-not $recordingProcess.HasExited) {
                 if ($StopFilePath -and (Test-Path -LiteralPath $StopFilePath)) {

@@ -53,6 +53,15 @@ copying an existing module by hand:
   `Install-Module`: on some machines (observed on the maintainer's Windows
   box) that combination fails with "Unable to resolve package source" while
   plain `Install-Module` works. Don't add it back.
+- **A green job is not proof that the tests ran.** The Test task treats a
+  missing `Invoke-Pester` result as a failure: Pester returns nothing when
+  its NUnit report cannot be written (a control character in a failure
+  message, which recorded terminal output carries), and a null result used
+  to pass as "no failures". The macOS job went green with a failed test the
+  moment the Unix system tests started running there. When a change touches
+  tests or engines, read each CI job's own `Tests Passed` line and its skip
+  count, and compare them across the runners; eight Unix system tests once
+  skipped themselves in CI while every job stayed green.
 
 ## Quality gate (must stay green)
 

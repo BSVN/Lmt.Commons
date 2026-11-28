@@ -54,12 +54,16 @@ BeforeAll {
         return (-join ($timeline.Events | Where-Object -FilterScript { $_[1] -eq 'o' } | ForEach-Object -Process { $_[2] }))
     }
 
-    # Normalizes plain text for line-level comparison: strips PID (varies per run),
-    # normalizes whitespace, removes empty lines.
+    # Normalizes plain text for line-level comparison: strips PID (varies per
+    # run), normalizes whitespace, removes empty lines. A control character
+    # that survives the stripping is shown in its escaped form: a failure
+    # message carrying a raw one cannot be written to the NUnit XML report,
+    # and Pester then returns no result at all.
     function Get-BsnNormalizedLine {
         param([string]$PlainText)
         $lines = $PlainText -split "`r?`n" |
-            ForEach-Object -Process { ($_ -replace 'SYSMARK-PID: \d+', 'SYSMARK-PID: <pid>').Trim() } |
+            ForEach-Object -Process { ($_ -replace 'SYSMARK-PID: \d+', 'SYSMARK-PID: <pid>') -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', { '\u{0:X4}' -f [int][char]$_.Value } } |
+            ForEach-Object -Process { $_.Trim() } |
             Where-Object -FilterScript { $_ }
         return $lines
     }

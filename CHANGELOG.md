@@ -69,6 +69,11 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 - **macOS: a stopped recording could lose up to 30 seconds.** BSD
   `script` flushes its log every 30 seconds by default, and the engine
   kills it on a stop request; the log is now flushed after every write.
+- **macOS: a recording made without a terminal began with a stray
+  `^D`.** When its input is at its end - in CI, from a scheduled job -
+  BSD `script` sends the end-of-file character into the session, and the
+  terminal echoes it into the recording. The engine now gives `script` an
+  input pipe that stays open when the caller has no terminal.
 - The Unix system tests now run on the Linux and macOS CI runners, which
   previously skipped all but two of them: the truth-table check, the
   session and stop tests, the 60,000-character multi-byte burst, the vim
@@ -178,6 +183,12 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The build no longer lets a failed test through when Pester cannot
+  write its report.** When a failure message holds a character that XML
+  cannot carry (recorded terminal output does), Pester's NUnit report
+  fails to export and `Invoke-Pester` returns nothing; the build then
+  counted no failures and printed an empty "test(s) passed". The Test task
+  now treats a missing result and a module without tests as failures.
 - **Recording on PowerShell 7 now needs PowerShell 7.6 or later.** The
   module writes cast files with a .NET library that PowerShell 7 supplies
   itself, and PowerShell 7.0 to 7.5 carry a copy that is too old for it.
