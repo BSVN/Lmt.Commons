@@ -18,6 +18,12 @@
     The file is written as UTF-8 without BOM with LF line endings, matching
     the asciicast specification. All number formatting is culture-invariant.
 
+    -OutputPath is the log script(1) kept. script(1) writes a start and a
+    done message of its own into it, and util-linux's timing log covers
+    only what the recorded session printed; the messages are left out
+    before the timing is applied (see Select-BsnSessionOutput), so the cast
+    holds the session's output and nothing else, timed as it happened.
+
     The header line and the event lines are written by the interop
     assembly's CastJson class, the same writer the ConPTY engine uses on
     Windows, so casts from the two engines are identical in structure and
@@ -111,7 +117,23 @@ function ConvertTo-BsnAsciicast {
     )
 
     $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
-    $outputBytes = [System.IO.File]::ReadAllBytes($OutputPath)
+    $timingEntryPattern = '^\+?(\d+\.?\d*)\s+(\d+)\s*$'
+
+    # script(1) writes a start and a done message of its own into the log.
+    # They are not the session's output, and with a timing log they are not
+    # timed either, so they are cut out before the timing is applied.
+    $timedBytes = -1
+    $timingLines = @()
+    if ($PSCmdlet.ParameterSetName -eq 'Timing') {
+        $timingLines = [System.IO.File]::ReadAllLines($TimingPath)
+        $timedBytes = 0
+        foreach ($timingLine in $timingLines) {
+            if ($timingLine -match $timingEntryPattern) {
+                $timedBytes += [int]$Matches[2]
+            }
+        }
+    }
+    $outputBytes = Select-BsnSessionOutput -Bytes ([System.IO.File]::ReadAllBytes($OutputPath)) -TimedBytes $timedBytes
 
     # Build the event plan: @{ Time; Offset; Count } triplets.
     $events = [System.Collections.Generic.List[object]]::new()
@@ -119,8 +141,8 @@ function ConvertTo-BsnAsciicast {
     if ($PSCmdlet.ParameterSetName -eq 'Timing') {
         $elapsed = 0.0
         $offset = 0
-        foreach ($timingLine in [System.IO.File]::ReadAllLines($TimingPath)) {
-            if ($timingLine -match '^\+?(\d+\.?\d*)\s+(\d+)\s*$') {
+        foreach ($timingLine in $timingLines) {
+            if ($timingLine -match $timingEntryPattern) {
                 $elapsed += [double]::Parse($Matches[1], $invariantCulture)
                 $count = [int]$Matches[2]
                 if (($count -gt 0) -and ($offset -lt $outputBytes.Length)) {

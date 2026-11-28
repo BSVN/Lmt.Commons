@@ -165,6 +165,53 @@ Describe 'ConvertTo-BsnAsciicast' {
         }
     }
 
+    Context 'script(1) messages are not part of the recording' {
+        # util-linux script(1) writes a start and a done message into the
+        # log it keeps, and its timing log covers the session's output only.
+        # Pairing the timing with the file from its first byte timed the
+        # start message and left the whole session as one untimed block at
+        # the end of the cast. These bytes are what util-linux 2.41 writes.
+        BeforeAll {
+            $script:StartMessage = 'Script started on 2026-11-28 01:22:25+03:30 [COMMAND="echo one; sleep 0.3; echo two; sleep 0.3; echo three" <not executed on terminal>]' + [char]10
+            $script:DoneMessage = [char]10 + 'Script done on 2026-11-28 01:22:26+03:30 [COMMAND_EXIT_CODE="0"]' + [char]10
+        }
+
+        It 'times the session output of a util-linux log and records nothing of the messages' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'util-linux.log'
+            $timingPath = Join-Path -Path $TestDrive -ChildPath 'util-linux.timing'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'util-linux.cast'
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes($script:StartMessage + "one`r`ntwo`r`nthree`r`n" + $script:DoneMessage))
+            Set-Content -LiteralPath $timingPath -Value "0.010169 5`n0.293918 5`n0.301894 7" -NoNewline
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $t, $c) ConvertTo-BsnAsciicast -OutputPath $o -TimingPath $t -CastPath $c } $outputPath $timingPath $castPath
+
+            $events = @(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 3 -Because 'one event per timed chunk of the session, none for the messages'
+            $firstTime = 0.010169
+            $secondTime = $firstTime + 0.293918
+            $thirdTime = $secondTime + 0.301894
+            $events[0][0] | Should -Be $firstTime
+            $events[0][2] | Should -Be "one`r`n"
+            $events[1][0] | Should -Be $secondTime
+            $events[1][2] | Should -Be "two`r`n"
+            $events[2][0] | Should -Be $thirdTime
+            $events[2][2] | Should -Be "three`r`n"
+        }
+
+        It 'leaves the messages out of a log without a timing log (BSD script)' {
+            $outputPath = Join-Path -Path $TestDrive -ChildPath 'bsd.log'
+            $castPath = Join-Path -Path $TestDrive -ChildPath 'bsd.cast'
+            [System.IO.File]::WriteAllBytes($outputPath, [System.Text.Encoding]::UTF8.GetBytes($script:StartMessage + "alpha`nbeta`n" + $script:DoneMessage))
+
+            & (Get-Module -Name 'Bsn.Host') { param($o, $c) ConvertTo-BsnAsciicast -OutputPath $o -CastPath $c -DurationSec 2.0 } $outputPath $castPath
+
+            $events = @(Get-Content -LiteralPath $castPath -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object -Process { , ($_ | ConvertFrom-Json) })
+            $events.Count | Should -Be 2
+            $events[0][2] | Should -Be "alpha`n"
+            $events[1][2] | Should -Be "beta`n"
+        }
+    }
+
     Context 'multi-byte UTF-8 survives chunk boundaries (issue #5)' {
         # https://github.com/BSVN/Lmt.Commons/issues/5
         It 'produces no U+FFFD when multi-byte chars span timing-file chunks' {

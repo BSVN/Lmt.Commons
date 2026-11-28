@@ -170,21 +170,41 @@ CI builds it from source; skips gracefully if unavailable.
 
 | Test | Windows CI | Windows local | Linux CI | Linux local | macOS CI | macOS local |
 |------|-----------|---------------|----------|-------------|----------|-------------|
-| Truth-table (ground truth) | ✅ | ✅ | ⏭️* | ✅ | ⏭️* | ✅ |
-| Session recording | ✅ | ✅ | ⏭️* | ✅ | ⏭️* | ✅ |
-| Stop finalization | ✅ | ✅ | ⏭️* | ✅ | ⏭️* | ✅ |
-| asciinema cross-check | N/A | N/A | ⏭️† | ✅ | ⏭️† | ✅ |
-| tmux cross-check | N/A | N/A | ⏭️† | ✅ | ⏭️† | ⏭️‡ |
-| console-logger cross-check | ✅ | ✅ | N/A | N/A | N/A | N/A |
+| Truth-table (ground truth) | yes | yes | yes | yes | yes | yes |
+| Session recording | yes | yes | yes | yes | yes | yes |
+| Stop finalization | yes | yes | yes | yes | yes | yes |
+| Multi-byte burst, vim TUI, metacharacters | n/a (oh-my-posh instead of vim) | n/a | yes | yes | yes | yes |
+| asciinema cross-check | n/a | n/a | yes | yes* | yes | yes* |
+| tmux cross-check | n/a | n/a | yes | yes* | yes | yes* |
+| console-logger cross-check | yes | yes | n/a | n/a | n/a | n/a |
 
-\* Linux system tests skip in CI (GitHub Actions) because the Unix
-`script(1)` engine's `ProcessStartInfo.Arguments` construction is
-unreliable under redirected stdio. Run locally in a real terminal.
+\* The cross-checks need their tool: CI installs asciinema and tmux on
+every Unix runner; elsewhere they skip when the tool is missing.
 
-† CI runners have redirected stdio, which prevents interactive terminal
-tools (asciinema, tmux) from working.
+## How Unix recording works in CI
 
-‡ tmux is not pre-installed on macOS runners.
+The Unix engine needs no terminal of its own: `script(1)` allocates a
+pseudo-terminal for the recorded session, so the Unix system tests run
+under CI's redirected stdio exactly as in a local terminal, in-process:
+
+```
+Pester test process (redirected stdio in CI)
+  --- Start-InteractiveTranscript
+        --- script(1) -- own pseudo-terminal --> sh -c <recorded command>
+              --- Output: --log-out / --log-timing (util-linux) or the
+                  typescript (BSD), then ConvertTo-BsnAsciicast
+```
+
+Two things make that reliable. The engine hands the command to
+`script(1)` as one argument (ArgumentList), so quotes and shell
+metacharacters in `-Command` survive; and it asks `script(1)` to flush
+its log as it goes (`-f` on util-linux, `-t 0` on BSD), so a recording
+that is stopped keeps everything printed before the stop.
+
+The engine's two `script(1)` flavours are also driven side by side, on
+every Unix runner, by `tests/unit/Start-BsnUnixPtyRecording.Tests.ps1`
+with shell shims - so the BSD path is tested on Linux CI and the
+util-linux path on macOS CI, whatever `script(1)` the runner has.
 
 ## How Windows recording works in CI
 

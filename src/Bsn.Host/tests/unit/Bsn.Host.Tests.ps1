@@ -12,6 +12,11 @@
     catch [System.IO.FileLoadException] {
         Import-Module -Name (Join-Path $moduleRoot 'Bsn.Host.psm1') -Force -ErrorAction 'Stop'
     }
+
+    # Native keyword enums cannot be referenced by a bare type literal from
+    # test scope; pull the enum value from the defining module's own scope
+    # (see AGENTS.md and the Start-InteractiveTranscript tests).
+    $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
 }
 
 Describe 'Bsn.Host manifest' {
@@ -58,6 +63,9 @@ Describe 'Bsn.Host interop dependencies' {
     # copy always wins there), Windows PowerShell 5.1, which has none, from
     # the copies shipped in lib/. The last test runs in a child process:
     # the module is already loaded in this one, and CI only ever runs pwsh.
+    # It is for Windows only: under WSL, Windows interop puts powershell.exe
+    # on the Linux PATH, but that Windows program can neither import the
+    # module from a Linux path nor use Start-Process's -WindowStyle.
     BeforeAll {
         # The assembly references of a DLL, read without running its code.
         function Get-BsnAssemblyReference {
@@ -127,9 +135,12 @@ Describe 'Bsn.Host interop dependencies' {
     }
 
     It 'loads, and writes cast JSON, in Windows PowerShell 5.1' {
+        if ((Get-BsnOperatingSystem) -ne $script:BsnWindows) {
+            Set-ItResult -Skipped -Because 'Windows PowerShell 5.1 exists only on Windows.'
+        }
         $windowsPowerShell = Get-Command -Name 'powershell.exe' -ErrorAction 'SilentlyContinue'
         if (-not $windowsPowerShell) {
-            Set-ItResult -Skipped -Because 'Windows PowerShell 5.1 is only available on Windows.'
+            Set-ItResult -Skipped -Because 'Windows PowerShell 5.1 was not found on PATH.'
         }
 
         $runnerPath = Join-Path -Path $TestDrive -ChildPath 'windows-powershell-runner.ps1'

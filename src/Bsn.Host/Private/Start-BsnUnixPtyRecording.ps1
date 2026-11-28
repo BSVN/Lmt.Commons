@@ -11,9 +11,13 @@
     - BSD script (macOS): records the raw stream only; timestamps are
       approximated by spreading line events across the measured duration.
 
-    The script process is monitored in a polling loop; creating StopFilePath
+    The recorded command is handed to script(1) as one argument, as it was
+    given, so it may contain quotes, pipes and redirections. The script
+    process is monitored in a polling loop; creating StopFilePath
     on disk (the Stop-InteractiveTranscript signaling channel) terminates it
-    and finalizes the recording.
+    and finalizes the recording. Both script(1) flavours are asked to write
+    their log as it goes, so a recording that is stopped keeps everything
+    the session printed before the stop.
 
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
@@ -110,6 +114,9 @@ function Start-BsnUnixPtyRecording {
         $processInfo.FileName = $scriptTool.Source
         $processInfo.UseShellExecute = $false
 
+        # One element per argument, handed to script(1) as it is: the
+        # recorded command is a single element, quotes and shell
+        # metacharacters included.
         if ($supportsTiming) {
             $timingPath = [System.IO.Path]::GetTempFileName()
             $outputPath = [System.IO.Path]::GetTempFileName()
@@ -118,21 +125,27 @@ function Start-BsnUnixPtyRecording {
             # The invocation shape depends on the installed script(1): probe it
             # (util-linux 2.39+/2.41 reject the positional typescript file that
             # older releases accept - see Resolve-BsnScriptInvocation).
-            $processInfo.Arguments = Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath
+            $scriptArguments = @(Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath)
         }
         else {
             $rawPath = [System.IO.Path]::GetTempFileName()
             $temporaryPaths = @($rawPath)
 
-            if ($Command) {
-                $processInfo.Arguments = ('-q "{0}" /bin/sh -c "{1}"' -f $rawPath, $Command)
-            }
-            else {
-                $processInfo.Arguments = ('-q "{0}" "{1}"' -f $rawPath, (Get-BsnDefaultShell))
-            }
+            # BSD script (macOS) has no -c option: it runs the command that
+            # follows the typescript file itself. Its log is flushed every
+            # 30 seconds by default, so a recording that is stopped (the
+            # engine kills script(1)) would lose up to that much output:
+            # -t 0 flushes after every write, like -f does on util-linux. BSD
+            # script has no -c option: it runs the command given after the
+            # typescript file itself.
+            $recordee = if ($Command) { @('/bin/sh', '-c', $Command) } else { @(Get-BsnDefaultShell) }
+            $scriptArguments = @('-q', '-t', '0', $rawPath) + $recordee
+        }
+        foreach ($scriptArgument in $scriptArguments) {
+            $processInfo.ArgumentList.Add($scriptArgument)
         }
 
-        Write-Verbose -Message ("Recording via: {0} {1}" -f $processInfo.FileName, $processInfo.Arguments)
+        Write-Verbose -Message ("Recording via: {0} {1}" -f $processInfo.FileName, ($scriptArguments -join ' '))
         $recordingProcess = [System.Diagnostics.Process]::Start($processInfo)
         try {
             while (-not $recordingProcess.HasExited) {

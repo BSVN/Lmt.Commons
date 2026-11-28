@@ -17,8 +17,8 @@ jobs:
       # (26.04, util-linux 2.41), while 24.04 keeps an older script(1) and
       # util-linux generation in the matrix - the Unix script(1) engine has
       # version-sensitive invocation compatibility (see Start-BsnUnixPtyRecording
-      # and Get-BsnScriptInvocationArguments), and the Unix -Command system test
-      # pins that behavior on both generations.
+      # and Resolve-BsnScriptInvocation), and the Unix system tests run the real
+      # engine on both generations.
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write   # Codecov OIDC token exchange (tokenless default-branch uploads)
@@ -32,6 +32,15 @@ jobs:
         # this scalar into a nested YAML mapping and invalidates the whole
         # workflow file (runs then fail in 0s with no jobs - see PR history).
         run: pip install --only-binary ':all:' asciinema==2.4.0
+
+      # The Unix system tests run the real script(1) engine under CI's
+      # redirected stdio on every Unix runner, and cross-check its recordings
+      # against asciinema (the reference implementation) and tmux pipe-pane
+      # (an independent PTY). tmux is preinstalled on Ubuntu only; macOS has
+      # neither tool.
+      - name: Install cross-check tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install asciinema tmux
 
       - name: Build console-logger (Windows cross-check tool)
         if: runner.os == 'Windows'

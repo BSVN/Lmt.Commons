@@ -33,16 +33,19 @@ BeforeAll {
     $script:HasTmux = [bool](Get-Command -Name 'tmux' -ErrorAction 'SilentlyContinue')
     $script:HasConsoleLogger = [bool](Get-Command -Name 'conlog' -ErrorAction 'SilentlyContinue')
 
-    # Plain-text rendering of a VT stream: strip CSI (ESC[...cmd) and OSC
-    # (ESC]...BEL) sequences, then any remaining escape bytes. This is the
-    # "real view" a terminal would show from the cast's output stream.
+    # Plain-text rendering of a VT stream: what a terminal would show from
+    # the cast's output stream. It is the test's own, not the module's, so
+    # that the cross-checks stay independent of the code they check: CSI
+    # and OSC sequences go, then every other escape sequence - two- and
+    # three-byte ones too, such as the keypad mode switch (ESC =) that pwsh
+    # writes when it starts inside a terminal - and any escape byte left.
     function Convert-BsnCastPlainText {
         param([string]$RawStream)
-        $esc = [char]27
-        $text = $RawStream -replace ("{0}\[[0-9;?]*[a-zA-Z]" -f $esc), ''
-        $text = $text -replace ("{0}\][^\a]*\a" -f $esc), ''
-        $text = $text -replace ("[{0}]" -f $esc), ''
-        return $text
+        $esc = [string][char]27
+        $text = $RawStream -replace ($esc + '\][^\a' + $esc + ']*(\a|' + $esc + '\\)'), ''
+        $text = $text -replace ($esc + '\[[0-9;?<>= :]*[ -/]*[@-~]'), ''
+        $text = $text -replace ($esc + '[ -/]*[0-~]'), ''
+        return ($text -replace $esc, '')
     }
 
     function Get-BsnCastRawStream {
@@ -295,29 +298,34 @@ $stdout.Flush()
     # === Cross-check source: tmux pipe-pane (Linux) ===
     # Records via tmux's own PTY mechanism - a completely independent
     # terminal multiplexer infrastructure. Returns the raw capture file path.
+    # A detached session needs no terminal of its own, so this works under
+    # redirected stdio (CI) as well as in a local terminal.
     function Invoke-BsnTmuxRecording {
         param([string]$ScenarioPath, [string]$OutputPath)
 
         $tmux = Get-Command -Name 'tmux' -ErrorAction 'Stop'
         $sessionName = 'bsn-crosscheck-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 
-        # Create detached session running the scenario, pipe all pane output
-        & $tmux.Source new-session -d -s $sessionName "pwsh -NoProfile -File '$ScenarioPath'"
-        & $tmux.Source pipe-pane -t $sessionName "cat > '$OutputPath'"
+        try {
+            # The pipe is attached to the idle pane before the scenario is
+            # typed into it, so the capture starts with the very first byte.
+            & $tmux.Source new-session -d -s $sessionName
+            & $tmux.Source pipe-pane -t $sessionName "cat > '$OutputPath'"
+            & $tmux.Source send-keys -t $sessionName "pwsh -NoProfile -File '$ScenarioPath'; exit" Enter
 
-        # Wait for the session to end (scenario completes)
-        $timeout = 60
-        $elapsed = 0
-        while ($elapsed -lt $timeout) {
-            $sessions = & $tmux.Source list-sessions -F '#{session_name}' 2>$null
-            if ($sessions -notcontains $sessionName) { break }
-            Start-Sleep -Milliseconds 500
-            $elapsed += 0.5
+            # Wait for the session to end (the scenario completes and the shell exits)
+            $timeout = 60
+            $elapsed = 0
+            while ($elapsed -lt $timeout) {
+                $sessions = & $tmux.Source list-sessions -F '#{session_name}' 2>$null
+                if ($sessions -notcontains $sessionName) { break }
+                Start-Sleep -Milliseconds 500
+                $elapsed += 0.5
+            }
         }
-
-        # Clean up
-        & $tmux.Source kill-session -t $sessionName 2>$null
-        & $tmux.Source pipe-pane -t $sessionName 2>$null
+        finally {
+            & $tmux.Source kill-session -t $sessionName 2>$null
+        }
 
         if (-not (Test-Path -LiteralPath $OutputPath)) {
             throw 'tmux pipe-pane did not produce an output file.'
@@ -350,9 +358,6 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
             }
             if ($PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
-            }
-            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
-                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
             }
 
             $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
@@ -403,9 +408,6 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
             if (-not $script:HasAsciinema) {
                 Set-ItResult -Skipped -Because 'asciinema is not installed (pip install asciinema). Install it to run this cross-check.'
             }
-            if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
-                Set-ItResult -Skipped -Because 'requires an interactive terminal (CI has redirected stdio).'
-            }
 
             $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
 
@@ -448,9 +450,6 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
             }
             if (-not $script:HasTmux) {
                 Set-ItResult -Skipped -Because 'tmux is not installed. Install it to run this cross-check.'
-            }
-            if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
-                Set-ItResult -Skipped -Because 'requires an interactive terminal for tmux (CI has redirected stdio).'
             }
 
             $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
@@ -529,9 +528,6 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
             }
             if ($PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
-            }
-            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
-                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
             }
 
             # Scenario: write 60000 copies of a 3-byte UTF-8 character (U+2580).
@@ -647,10 +643,7 @@ Write-Output 'OMP-STRESS-DONE'
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
             }
             if ($script:IsWindowsPlatform) {
-                Set-ItResult -Skipped -Because 'vim TUI test is Linux-only (Windows uses oh-my-posh test instead).'
-            }
-            if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
-                Set-ItResult -Skipped -Because 'requires an interactive terminal (CI has redirected stdio); run locally.'
+                Set-ItResult -Skipped -Because 'vim TUI test is for Unix (Windows uses oh-my-posh test instead).'
             }
 
             $vimCommand = Get-Command -Name 'vim' -ErrorAction 'SilentlyContinue'
@@ -660,6 +653,12 @@ Write-Output 'OMP-STRESS-DONE'
             }
             if (-not $vimCommand) {
                 Set-ItResult -Skipped -Because 'vim/vi is not installed. Install it to run this TUI stress test.'
+            }
+
+            # vim needs a terminal type. A session without a terminal (CI)
+            # may have none to pass on: the recorded child gets one here.
+            if (-not $env:TERM -or $env:TERM -eq 'dumb') {
+                $env:TERM = 'xterm-256color'
             }
 
             # Create a file with distinctive content for vim to render
@@ -676,24 +675,22 @@ VIM-TUI-LINE-8: │ Box-drawing characters  │
 VIM-TUI-LINE-9: └──────────────────────────┘
 '@ | Set-Content -LiteralPath $contentFile -Encoding UTF8
 
-            # Scenario: open vim with the content file, wait briefly, quit
-            # vim enters alt-screen, renders the file with line numbers,
-            # status line, and the content - then exits alt-screen on :q
-            $scenarioDir = Join-Path -Path $TestDrive -ChildPath 'vim-tui'
-            $null = New-Item -ItemType Directory -Path $scenarioDir -Force
-            $scenarioPath = Join-Path -Path $scenarioDir -ChildPath 'scenario-vim.sh'
-
-            $vimScript = @"
-#!/bin/sh
-# Open vim with the content file, auto-quit after loading
-vim -R -c 'sleep 1' -c 'q' '$contentFile' 2>/dev/null || vi -R -c 'q' '$contentFile' 2>/dev/null
-echo 'VIM-TUI-DONE'
-"@
-            $vimScript | Set-Content -LiteralPath $scenarioPath -Encoding UTF8
-            $null = & chmod +x $scenarioPath
+            # Open vim with the content file, let it render, quit: vim
+            # enters the alternate screen, draws the file and its status
+            # line, and leaves the alternate screen on :q. The command goes
+            # to the Unix engine as it is; script(1) runs it through /bin/sh
+            # in a pseudo-terminal of its own, so no terminal is needed here.
+            # The redraw is explicit: vim runs -c commands before its first
+            # screen update, and a sleep alone leaves the file undrawn.
+            $recordedCommand = if ($vimCommand.Name -eq 'vim') {
+                "vim -R -c 'redraw!' -c 'sleep 1' -c 'q' '$contentFile'"
+            }
+            else {
+                "vi -R -c 'redraw!' -c 'q' '$contentFile'"
+            }
 
             $castPath = Join-Path -Path $TestDrive -ChildPath 'vim-tui.cast'
-            $result = Invoke-BsnSystemRecording -ScenarioPath $scenarioPath -CastPath $castPath
+            $result = Start-InteractiveTranscript -Command $recordedCommand -Path $castPath
             $result.ExitCode | Should -Be 0
 
             $rawStream = Get-BsnCastRawStream -CastPath $castPath
@@ -1070,9 +1067,6 @@ Show-InteractiveTranscript -Path `$CastPath
             if ($PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure.'
             }
-            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
-                Set-ItResult -Skipped -Because 'the Unix script(1) engine is unreliable under CI redirected stdio; run locally.'
-            }
 
             $scenarioPath = Join-Path -Path $TestDrive -ChildPath 'scenario-metachar.ps1'
             @'
@@ -1196,9 +1190,6 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
             }
             if ($PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure; the ConPTY hidden-console proxy behaves differently on Windows PowerShell 5.1.'
-            }
-            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
-                Set-ItResult -Skipped -Because 'the Unix script(1) engine uses ProcessStartInfo.Arguments which is unreliable under CI redirected stdio; run locally in a terminal, or fix the engine to use ArgumentList (follow-up).'
             }
             $castPath = Join-Path -Path $TestDrive -ChildPath 'session-system.cast'
             $scenarioPath = Get-BsnScenarioScript -Directory $TestDrive
@@ -1334,9 +1325,6 @@ Write-Output 'METACHAR:a|b&c<d>e^f'
             }
             if ($PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'system tests require PowerShell 7 console infrastructure; the ConPTY hidden-console proxy behaves differently on Windows PowerShell 5.1.'
-            }
-            if (-not $script:IsWindowsPlatform -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
-                Set-ItResult -Skipped -Because 'the Unix script(1) engine uses ProcessStartInfo.Arguments which is unreliable under CI redirected stdio; run locally in a terminal, or fix the engine to use ArgumentList (follow-up).'
             }
             if (-not (Get-Command -Name 'Start-ThreadJob' -ErrorAction 'SilentlyContinue')) {
                 Set-ItResult -Skipped -Because 'Start-ThreadJob is required for the in-session stop signal.'
