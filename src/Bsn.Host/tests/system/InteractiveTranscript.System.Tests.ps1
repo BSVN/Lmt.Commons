@@ -402,7 +402,7 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
     }
 
     Context 'cross-check against asciinema (reference asciicast implementation)' -Tag 'SystemTest' {
-        It 'our cast and asciinema rec capture the same content (Linux only)' {
+        It 'our cast and asciinema rec capture the same content (Unix)' {
             if (-not $script:CanRunSystemTests -or $PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'requires pwsh 7.'
             }
@@ -445,7 +445,7 @@ Describe 'InteractiveTranscript system tests' -Tag 'SystemTest' {
     }
 
     Context 'cross-check against tmux pipe-pane (independent PTY mechanism)' -Tag 'SystemTest' {
-        It 'our cast and tmux capture the same content (Linux only)' {
+        It 'our cast and tmux capture the same content (Unix)' {
             if (-not $script:CanRunSystemTests -or $PSVersionTable.PSVersion.Major -lt 7) {
                 Set-ItResult -Skipped -Because 'requires pwsh 7.'
             }
