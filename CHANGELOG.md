@@ -51,6 +51,31 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   the same probe. Found while verifying WSL2/Ubuntu 26.04 end to end:
   `echo`-level recordings now capture markers, kernel release and zero
   U+FFFD.
+- **Linux/macOS: a recorded command that contains quotes could not be
+  recorded.** The Unix engine handed the command to `script(1)` inside a
+  quoted argument string, so a quote, a pipe or an ampersand in `-Command`
+  broke the invocation ("unexpected number of arguments") and left a cast
+  without events. The command is now passed as one argument, exactly as
+  given.
+- **Linux: recordings were mistimed and carried script(1)'s own
+  messages.** util-linux's `script` writes a "Script started on" line and
+  a "Script done on" line into its log, around the session's output, and
+  its timing log covers only that output. The converter paired the timing
+  with the log from its first byte, which timed the start message and
+  left the whole session as one untimed block at the end of the cast - a
+  long session replayed as nothing, then everything at once. The messages
+  are left out and the session is timed as it happened; transcripts no
+  longer begin with "Script started on ...".
+- **macOS: a stopped recording could lose up to 30 seconds.** BSD
+  `script` flushes its log every 30 seconds by default, and the engine
+  kills it on a stop request; the log is now flushed after every write.
+- The Unix system tests now run on the Linux and macOS CI runners, which
+  previously skipped all but two of them: the truth-table check, the
+  session and stop tests, the 60,000-character multi-byte burst, the vim
+  TUI recording and the metacharacter recording, plus the cross-checks
+  against asciinema and tmux (CI now installs both on macOS). Unit tests
+  drive the engine through both `script(1)` flavours, util-linux's and
+  BSD's, with shell shims on every Unix runner.
 
 ### Added
 
@@ -106,8 +131,7 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
   `csharp`); the C# sources that cannot be unit tested are explicitly
   ignored in `codecov.yml`.
 - A CI-runnable Linux/macOS system test for `-Command` recordings via
-  the script(1) engine (the engine had zero end-to-end CI coverage:
-  every other Unix system test skips under CI redirected stdio). It
+  the script(1) engine - the engine's first end-to-end CI coverage. It
   asserts markers, kernel name and zero U+FFFD in the cast, and pins
   the invocation-compatibility regression.
 - Unit tests for the invocation probe with fake script(1) binaries
@@ -155,24 +179,18 @@ and the modules adhere to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - **Recording on PowerShell 7 now needs PowerShell 7.6 or later.** The
-  interop assembly takes System.Text.Json from NuGet to write cast files,
-  and PowerShell 7 binds an assembly to the System.Text.Json it ships
-  itself with - and only when that is at least the version the assembly
-  was built against. PowerShell 7.0 to 7.5 ship older ones (7.4 ships
-  8.0.0), so `Start-InteractiveTranscript` fails there before anything is
+  module writes cast files with a .NET library that PowerShell 7 supplies
+  itself, and PowerShell 7.0 to 7.5 carry a copy that is too old for it.
+  On those releases `Start-InteractiveTranscript` fails before anything is
   recorded, with a message that says why; the cmdlets that read, play and
-  convert recordings keep working. Windows PowerShell 5.1 is not
-  affected: it has no System.Text.Json, so the module ships one in
-  `lib/`. An older package version was not an option, because the
-  releases before 10.0 only load on .NET Framework through binding
-  redirects, which a PowerShell session does not provide.
-- Cast files are written with System.Text.Json (`CastJson`, one writer
-  for both engines) as compact JSON: `[0.5,"o","x"]` instead of
+  convert recordings keep working. Windows PowerShell 5.1 is not affected.
+- Cast files are written as compact JSON: `[0.5,"o","x"]` instead of
   `[0.5, "o", "x"]`, and control characters as `\u001B` rather than
   `\u001b`. The content is the same and every asciicast reader accepts
-  it; casts from the two engines are now alike in structure and escaping.
+  it; recordings from the Windows and the Unix engine are now alike in
+  structure and escaping.
 - The Bsn.Host package grows by about 1.3 MB: it now carries the .NET
-  assemblies System.Text.Json depends on, listed in the module's
+  assemblies of that library, listed in the module's
   `THIRD-PARTY-NOTICES.txt`.
 
 ## [Bsn.Host 0.2.3] - 2026-11-07

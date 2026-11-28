@@ -87,6 +87,10 @@ before:
   ANSI on 5.1, which turns the non-ASCII text cast files carry into
   mojibake - silently, so a test can pass for the wrong reason. Read
   them with `-Encoding UTF8` or `File.ReadAllLines`/`ReadAllText`.
+- Under WSL, Windows interop puts `powershell.exe` on the Linux `PATH`:
+  `Get-Command powershell.exe` succeeds there and launches a Windows
+  program that cannot import the Linux module. Gate Windows-only tests on
+  `Get-BsnOperatingSystem`, never on the presence of a Windows executable.
 
 ## Module-specific constraints
 
@@ -208,33 +212,52 @@ before:
   (`src/Bsn.Host/src/CastJson.cs`, System.Text.Json, pinned by the NUnit
   `CastJsonTests`): one compact JSON value per line, numbers formatted by
   the class itself - do not assemble cast lines by hand in either engine.
+  The header's layout is declared with `JsonPropertyName` attributes on
+  `CastJson`'s header type (and on `AuditMetadata`); System.Text.Json
+  serializes the header from them.
   `ConvertTo-BsnAsciicast` and `Get-BsnCastTimeline` are the pure,
   Pester-tested conversion/parsing logic - extend tests there rather than
   smoke-testing the native engine.
-  Unix script(1) invocation: the engine PROBES the installed script(1)
-  binary (Get-BsnScriptInvocationArguments) because util-linux 2.39+
-  (Ubuntu 24.04/26.04) rejects combining `--log-out` with a trailing
-  positional typescript file ('unexpected number of arguments') - which
-  made recordings come back empty - while 2.37 and older accept both
-  shapes; do not hardcode either invocation shape or parse util-linux
-  version strings. The `-Command` Unix system test plus the
-  Get-BsnScriptInvocationArguments unit tests keep this pinned, and the
-  CI matrix runs a pinned ubuntu-24.04 image (util-linux 2.39) next to
-  ubuntu-latest so two util-linux generations are covered.
+  Unix script(1) engine rules, each learned from a real defect:
+  - The recorded command goes to script(1) as ONE argument
+    (`ProcessStartInfo.ArgumentList`, also in the probe of
+    `Resolve-BsnScriptInvocation`), never inside an argument string: a
+    quote in `-Command` broke the invocation and produced a cast without
+    events.
+  - util-linux's script(1) writes "Script started on" and "Script done
+    on" messages into `--log-out`, and its `--log-timing` covers only the
+    session's output. `Select-BsnSessionOutput` leaves the messages out
+    before the timing is applied; without it the whole session lands in
+    the cast as one untimed block. macOS's BSD script(1) leaves both out
+    in quiet mode.
+  - Both flavours flush their log as it goes (`-f` on util-linux, `-t 0`
+    on BSD, whose default is 30 seconds): the engine kills script(1) on a
+    stop request, and a buffered log would lose the end of the session.
+  - The engine PROBES the installed script(1) binary
+    (`Resolve-BsnScriptInvocation`) because util-linux 2.39+ (Ubuntu
+    24.04/26.04) rejects combining `--log-out` with a trailing positional
+    typescript file ('unexpected number of arguments') - which made
+    recordings come back empty - while 2.37 and older accept both shapes;
+    do not hardcode either invocation shape or parse util-linux version
+    strings. The Unix system tests plus the `Resolve-BsnScriptInvocation`
+    and `Start-BsnUnixPtyRecording` unit tests keep this pinned, and the
+    CI matrix runs a pinned ubuntu-24.04 image (util-linux 2.39) next to
+    ubuntu-latest so two util-linux generations are covered.
 - Cast header audit metadata (the `bsn` block a recording stamps with
   who ran the session, where, and which module and PowerShell recorded
   it) has ONE definition: `AuditMetadata` in
-  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type that
-  `CastJson.Header` writes into the header; its output is pinned byte for
-  byte by the NUnit `AuditMetadataTests`. Do not hand-build the block:
-  `Start-InteractiveTranscript` creates the object, the engine wrappers
-  take it as `-AuditMetadata` (the ConPTY engine receives the typed
-  object, not JSON text), and both cast writers hand it to
-  `CastJson.Header`. Readers probe the block key by
+  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type whose
+  fields declare their block keys with `JsonPropertyName` attributes;
+  `CastJson.Header` serializes it into the header, and the output is
+  pinned byte for byte by the NUnit `AuditMetadataTests`. Do not
+  hand-build the block: `Start-InteractiveTranscript` creates the object,
+  the engine wrappers take it as `-AuditMetadata` (the ConPTY engine
+  receives the typed object, not JSON text), and both cast writers hand
+  it to `CastJson.Header`. Readers probe the block key by
   key with `Get-BsnObjectProperty`, and casts without it must keep
-  converting. A new field therefore touches the C# property and its
-  NUnit cases, the gather site in `Start-InteractiveTranscript`, and
-  the readers.
+  converting. A new field therefore touches the C# property (with its
+  attribute and a row in the tests' `FieldCases()`), the gather site in
+  `Start-InteractiveTranscript`, and the readers.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
   self-contained (it is shipped alone to remote machines via
   `Invoke-Command -FilePath`, which cannot carry the module's DLL): its
@@ -307,12 +330,21 @@ before:
 - System tests (`src/Bsn.Host/tests/system/`): full end-to-end tests
   that exercise the real recording engines (no mocks). Windows uses a
   hidden-console runner process (CI has redirected stdio which breaks
-  ConPTY); Linux uses in-process script(1). Cross-check against
-  independent tools: asciinema (Linux, reference asciicast
-  implementation), tmux pipe-pane (Linux, independent PTY), and
-  console-logger (Windows, independent ConPTY wrapper from
-  rhubarb-geek-nz/console-logger, cited in RFC 421). All cross-check
-  tests skip gracefully when their tool is unavailable. See
+  ConPTY); Linux and macOS record in-process, because script(1)
+  allocates its own pseudo-terminal - which is also why no Unix system
+  test may skip for redirected stdio: eight of them did, and CI stayed
+  green while the engine could not record a command with a quote and
+  mistimed every Linux recording. The Unix tests have to run on the CI
+  runners; reproduce locally in WSL (stdin from /dev/null, output
+  redirected is what CI looks like). Cross-check against independent
+  tools: asciinema (Linux/macOS, reference asciicast implementation), tmux
+  pipe-pane (Linux/macOS, independent PTY), and console-logger (Windows,
+  independent ConPTY wrapper from rhubarb-geek-nz/console-logger, cited
+  in RFC 421); CI installs asciinema and tmux on every Unix runner, and
+  the cross-check tests skip only when their tool is unavailable.
+  `tests/unit/Start-BsnUnixPtyRecording.Tests.ps1` drives the Unix engine
+  through both script(1) flavours with shell shims, so the BSD path runs
+  on Linux CI and the util-linux path on macOS CI. See
   tests/system/README.md for the full architecture diagram.
 - C# unit tests (NUnit + coverlet) live in `src/Bsn.Host/tests/csharp`
   and run inside the build's Test task (`dotnet test`, Cobertura

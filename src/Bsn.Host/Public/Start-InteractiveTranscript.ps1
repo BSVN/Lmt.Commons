@@ -144,13 +144,9 @@ using module Bsn.Common
       correctly even on OEM-codepage consoles (cmd, Windows PowerShell
       5.1 hosts).
     - Recording runs on Windows PowerShell 5.1 and on PowerShell 7.6 or
-      later. Cast files are written with System.Text.Json: Windows
-      PowerShell 5.1 has none, so the module ships a copy, while
-      PowerShell 7 uses the copy it ships with, which has to be at least
-      the version the module was built against. On PowerShell 7.0 to 7.5
-      the cmdlets that read, play and convert recordings keep working,
-      and Start-InteractiveTranscript fails before anything is recorded,
-      with a message that says why.
+      later. On PowerShell 7.0 to 7.5 Start-InteractiveTranscript fails
+      before anything is recorded, with a message that says why; the
+      cmdlets that read, play and convert recordings keep working there.
 
     Implements https://github.com/PowerShell/PowerShell/issues/28353
     following the parameter and format semantics of PowerShell-RFC#421 at

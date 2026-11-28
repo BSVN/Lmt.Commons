@@ -57,6 +57,11 @@ windows/ubuntu/macos, CodeQL, SonarCloud quality gate):
 - **Tests live inside each module** at `src/<Module>/tests/*.Tests.ps1`.
   Never write tests that suspend, sleep, or reboot a real machine - all
   suspend-path tests are mocked.
+- **Tests have to run where the behaviour lives.** The Unix system tests
+  of `Bsn.Host` run on the Linux and macOS CI runners: do not skip a test
+  there for "redirected stdio" (see
+  [tests/system/README.md](src/Bsn.Host/tests/system/README.md)); reproduce
+  CI conditions locally, for example in WSL with stdin from `/dev/null`.
 - **Every public cmdlet ships three doc artifacts**, updated together:
   comment-based help in the function, `en-US/about_*.help.txt`, and
   `docs/en-US/<Cmdlet>.md`. The Markdown pages feed the online help site
