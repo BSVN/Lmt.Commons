@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Bsn.Host.Interop;
 using NUnit.Framework;
@@ -9,13 +11,14 @@ namespace Bsn.Host.Tests
 {
     /// <summary>
     /// Unit tests for the capture-time audit metadata, the "bsn" block a
-    /// recording stamps into its cast header. The block is written by
-    /// AuditMetadata inside CastJson.Header() - the header writer both
-    /// recording engines share (the ConPTY CastWriter in this assembly on
-    /// Windows, ConvertTo-BsnAsciicast for the script(1) engine on Unix) -
-    /// and its readers parse it back out of the cast header. So the key
-    /// names, their order and the format are pinned byte for byte here,
-    /// through CastJson.Header(): the only way a block ever gets written.
+    /// recording stamps into its cast header. The block is System.Text.Json's
+    /// serialization of AuditMetadata, written inside CastJson.Header() - the
+    /// header writer both recording engines share (the ConPTY CastWriter in
+    /// this assembly on Windows, ConvertTo-BsnAsciicast for the script(1)
+    /// engine on Unix) - and its readers parse it back out of the cast
+    /// header. So the key names, their order and the format are pinned byte
+    /// for byte here, through CastJson.Header(): the only way a block ever
+    /// gets written.
     /// </summary>
     [TestFixture]
     public class AuditMetadataTests
@@ -139,13 +142,62 @@ namespace Bsn.Host.Tests
         }
 
         [Test]
-        public void EveryPublicProperty_HasAFieldCase()
+        public void EveryField_HasAFieldCase()
         {
             // A new field needs a row in FieldCases() - and so the test above
             // - or it could be dropped from the block unnoticed.
             string[] covered = FieldCases().Select(caseData => (string)caseData.Arguments[0]).ToArray();
 
-            Assert.That(typeof(AuditMetadata).GetProperties().Select(property => property.Name), Is.EquivalentTo(covered));
+            Assert.That(BlockProperties().Select(property => property.Name), Is.EquivalentTo(covered));
+        }
+
+        [Test]
+        public void EveryField_DeclaresTheKeyItIsWrittenUnder_InOrder()
+        {
+            // The key of a field is its JsonPropertyName. A property without
+            // one would be written under its C# name.
+            Assert.That(BlockProperties().Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>().Name),
+                Is.EqualTo(new[] { "session_id", "recorded_by", "host", "user", "pid", "psversion", "psedition" }));
+        }
+
+        [Test]
+        public void NoOtherPropertyIsPartOfTheBlock()
+        {
+            // A public property that is not a field (IsEmpty tells whether
+            // there is a block at all) must say so, or it would be written.
+            PropertyInfo[] others = typeof(AuditMetadata).GetProperties().Except(BlockProperties()).ToArray();
+
+            Assert.That(others.Select(property => property.Name), Is.EqualTo(new[] { "IsEmpty" }));
+            Assert.That(others.All(property => property.IsDefined(typeof(JsonIgnoreAttribute), false)), Is.True);
+        }
+
+        /// <summary>
+        /// The properties that are written into the block: those that
+        /// declare a key.
+        /// </summary>
+        private static PropertyInfo[] BlockProperties()
+        {
+            return typeof(AuditMetadata).GetProperties()
+                .Where(property => property.IsDefined(typeof(JsonPropertyNameAttribute), false)).ToArray();
+        }
+
+        [Test]
+        public void AnEmptyStringOrANonPositiveProcessId_CountsAsNoValue()
+        {
+            AuditMetadata metadata = new AuditMetadata { SessionId = string.Empty, ProcessId = -1 };
+
+            Assert.That(metadata.SessionId, Is.Null);
+            Assert.That(metadata.ProcessId, Is.Zero);
+            Assert.That(metadata.IsEmpty, Is.True);
+        }
+
+        [Test]
+        public void APropertyReadsBackWhatWasAssignedToIt_WhenItIsAValue()
+        {
+            AuditMetadata metadata = FullMetadata();
+
+            Assert.That(metadata.SessionId, Is.EqualTo(SessionId));
+            Assert.That(metadata.ProcessId, Is.EqualTo(4242));
         }
 
         // === fields left out ===

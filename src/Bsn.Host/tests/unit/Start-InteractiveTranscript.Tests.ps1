@@ -29,7 +29,10 @@ BeforeAll {
     $script:AssertCaptureMetadata = {
         $captured = $script:CapturedMetadata
         $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the audit metadata object'
-        ((@($captured.PSObject.Properties.Name) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
+        # The seven fields of the audit block; IsEmpty only tells whether
+        # the object carries any of them.
+        ((@($captured.PSObject.Properties.Name | Where-Object { $_ -ne 'IsEmpty' }) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
+        $captured.IsEmpty | Should -BeFalse -Because 'the recording carries its session context'
         Should -Actual $captured.UserName -Be ([Environment]::UserName)
         Should -Actual $captured.ComputerName -Be ([System.Net.Dns]::GetHostName())
         Should -Actual $captured.ProcessId -Be $PID

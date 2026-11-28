@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Bsn.Host.Interop
 {
@@ -25,6 +26,10 @@ namespace Bsn.Host.Interop
     /// given, so the time format of a cast file is the same whatever
     /// PowerShell, and whatever version of the library, wrote it.
     ///
+    /// The header's layout is declared on the CastHeader type: the key of
+    /// each member is its JsonPropertyName, a member that is null is left
+    /// out, and System.Text.Json serializes the header from that.
+    ///
     /// System.Text.Json is a NuGet dependency of this assembly. PowerShell 7
     /// binds this assembly to the copy it ships with itself, and only when
     /// that is at least the version this assembly was built against; Windows
@@ -41,6 +46,71 @@ namespace Bsn.Host.Interop
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
+
+        // The header is serialized through these options, with the encoder
+        // the event lines are written with: the whole file is escaped one way.
+        private static readonly JsonSerializerOptions HeaderJsonOptions = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        /// <summary>
+        /// The members are declared in the order the header carries them.
+        /// Version 2 records the terminal size as "width"/"height", version 3
+        /// as a "term" object and additionally the command; the members of the
+        /// other version stay null and are left out.
+        /// </summary>
+        private sealed class CastHeader
+        {
+            [JsonPropertyName("version")]
+            public int Version { get; set; }
+
+            [JsonPropertyName("width")]
+            public int? Width { get; set; }
+
+            [JsonPropertyName("height")]
+            public int? Height { get; set; }
+
+            [JsonPropertyName("term")]
+            public CastTerminalSize Term { get; set; }
+
+            [JsonPropertyName("timestamp")]
+            public long Timestamp { get; set; }
+
+            [JsonPropertyName("command")]
+            public string Command { get; set; }
+
+            [JsonPropertyName("title")]
+            public string Title { get; set; }
+
+            [JsonPropertyName("env")]
+            public CastEnvironment Environment { get; set; }
+
+            [JsonPropertyName("bsn")]
+            public AuditMetadata AuditMetadata { get; set; }
+        }
+
+        private sealed class CastTerminalSize
+        {
+            [JsonPropertyName("cols")]
+            public int Columns { get; set; }
+
+            [JsonPropertyName("rows")]
+            public int Rows { get; set; }
+
+            [JsonPropertyName("type")]
+            public string Type { get; set; }
+        }
+
+        private sealed class CastEnvironment
+        {
+            [JsonPropertyName("SHELL")]
+            public string Shell { get; set; }
+
+            [JsonPropertyName("TERM")]
+            public string Term { get; set; }
+        }
 
         /// <summary>
         /// Returns the header line of a cast file, without the trailing
@@ -62,40 +132,28 @@ namespace Bsn.Host.Interop
                 throw new ArgumentOutOfRangeException(nameof(castVersion), "An asciicast file is either version 2 or version 3.");
             }
             string shell = shellName ?? string.Empty;
+            CastHeader header = new CastHeader();
+            header.Version = castVersion;
+            header.Timestamp = timestamp;
+            header.Title = title ?? string.Empty;
+            header.Environment = new CastEnvironment { Shell = shell, Term = TerminalType };
+            if (castVersion == 3)
+            {
+                header.Term = new CastTerminalSize { Columns = width, Rows = height, Type = TerminalType };
+                header.Command = shell;
+            }
+            else
+            {
+                header.Width = width;
+                header.Height = height;
+            }
+            if ((auditMetadata != null) && !auditMetadata.IsEmpty)
+            {
+                header.AuditMetadata = auditMetadata;
+            }
             return Serialize(delegate (Utf8JsonWriter writer)
             {
-                writer.WriteStartObject();
-                writer.WriteNumber("version", castVersion);
-                if (castVersion == 3)
-                {
-                    writer.WriteStartObject("term");
-                    writer.WriteNumber("cols", width);
-                    writer.WriteNumber("rows", height);
-                    writer.WriteString("type", TerminalType);
-                    writer.WriteEndObject();
-                }
-                else
-                {
-                    writer.WriteNumber("width", width);
-                    writer.WriteNumber("height", height);
-                }
-                writer.WriteNumber("timestamp", timestamp);
-                if (castVersion == 3)
-                {
-                    writer.WriteString("command", shell);
-                }
-                writer.WriteString("title", title ?? string.Empty);
-                writer.WriteStartObject("env");
-                writer.WriteString("SHELL", shell);
-                writer.WriteString("TERM", TerminalType);
-                writer.WriteEndObject();
-                if ((auditMetadata != null) && !auditMetadata.IsEmpty)
-                {
-                    writer.WriteStartObject("bsn");
-                    auditMetadata.WriteTo(writer);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndObject();
+                JsonSerializer.Serialize(writer, header, HeaderJsonOptions);
             });
         }
 
