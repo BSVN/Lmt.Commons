@@ -82,6 +82,34 @@ events. `-RecordInput` records keystrokes as `i` events (off by default -
 it can capture secrets; the fact is noted in the cast header; Windows only
 this release).
 
+Recording runs on Windows PowerShell 5.1 and on PowerShell 7.6 or later.
+On PowerShell 7.0 to 7.5 `Start-InteractiveTranscript` fails before
+anything is recorded, with a message that says why; the cmdlets that read,
+play and convert recordings keep working there.
+
+## Capture-time audit metadata
+
+Every recording stamps the session context into the cast header at
+capture time, under a `bsn` key: a GUID `session_id` minted when the
+recording starts, the `recorded_by` module version, `host`, `user`,
+`pid`, and the recording PowerShell's `psversion`/`psedition`. The
+asciicast spec treats unknown header keys as ignorable, so such casts
+remain fully ecosystem-compatible (`asciinema` plays them untouched).
+Downstream consumers derive the session context from the recording:
+[ConvertTo-BsnTranscript](ConvertTo-BsnTranscript.md) fills the
+Start-Transcript header fields automatically, and
+[Export-BsnAuditLog](Export-BsnAuditLog.md) /
+[ConvertTo-BsnAuditRecord](ConvertTo-BsnAuditRecord.md) fill their
+records' session block - no more blank `who/where` fields or manual
+parameters.
+
+On Windows the console output encoding is temporarily switched to UTF-8
+for the duration of the recording and restored afterwards (same restore
+discipline as the live proxy view - issue #5); the recorded command or
+shell runs inside a pseudo-terminal; everything inside it is captured.
+
+## Console codepage behavior
+
 On Windows the recorded session runs under a UTF-8 console codepage (the
 programmatic `chcp 65001` via `[Console]::OutputEncoding`/`InputEncoding`),
 and the engine temporarily switches the calling console's output codepage
@@ -101,6 +129,9 @@ session is the closest a PowerShell Gallery module can deliver.
 
 ## Limitations
 
+- Recording needs Windows PowerShell 5.1 or PowerShell 7.6 or later; on
+  PowerShell 7.0 to 7.5 the cmdlet fails with a message that says so (see
+  [Engines and platform support](#engines-and-platform-support)).
 - `-RecordInput` is Windows-only in this release.
 - When the calling pwsh has redirected standard I/O (CI, scripted
   harnesses), a warning is emitted: Windows may route the recorded process

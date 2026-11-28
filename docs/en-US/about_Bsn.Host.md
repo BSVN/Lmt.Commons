@@ -81,6 +81,11 @@ while recording (the live proxy writes UTF-8 bytes) and restored
 afterwards, so the live view renders byte-writing TUIs correctly even on
 OEM-codepage consoles such as `cmd` or the Windows PowerShell 5.1 host.
 
+Recording runs on Windows PowerShell 5.1 and on PowerShell 7.6 or later.
+On PowerShell 7.0 to 7.5 `Start-InteractiveTranscript` fails before
+anything is recorded, with a message that says why; the cmdlets that read,
+play and convert recordings keep working there.
+
 ## Scenarios
 
 - Audit and compliance records of privileged interactive sessions

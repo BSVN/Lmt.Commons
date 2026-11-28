@@ -9,6 +9,9 @@ using module Bsn.Common
     - Windows requires Windows 10 1809 / Server 2019+ (pseudo-console);
       older versions fail with a platform-not-supported error.
     - Unix requires the script(1) utility on PATH.
+    - PowerShell 7 has to ship the System.Text.Json version the cast writer
+      was built against (see Test-BsnCastJsonLibrary); an older release
+      fails with a message that says so.
     - Redirected standard I/O (CI, scripted harnesses) produces a warning,
       because Windows may route the recorded process output around the
       pseudo-console.
@@ -26,6 +29,19 @@ function Test-BsnRecordingEnvironment {
 
     if ($Platform -eq [BsnOperatingSystem]::Unknown) {
         throw 'Interactive transcripts are not supported on this platform (detected Unknown).'
+    }
+
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        # On PowerShell 7 the cast writer's JSON library has to come from the
+        # running PowerShell, and has to be at least the version the interop
+        # assembly was built against - the version of the copy the module
+        # ships in lib/ (see Test-BsnCastJsonLibrary).
+        $shippedJsonPath = Join-Path -Path (Join-Path -Path $script:ModuleRoot -ChildPath 'lib') -ChildPath 'System.Text.Json.dll'
+        $inBoxJsonPath = Join-Path -Path $PSHOME -ChildPath 'System.Text.Json.dll'
+        Test-BsnCastJsonLibrary `
+            -RequiredVersion ([System.Reflection.AssemblyName]::GetAssemblyName($shippedJsonPath).Version) `
+            -AvailableVersion ([System.Reflection.AssemblyName]::GetAssemblyName($inBoxJsonPath).Version) `
+            -PowerShellVersion $PSVersionTable.PSVersion
     }
 
     if ($Platform -eq [BsnOperatingSystem]::Windows) {

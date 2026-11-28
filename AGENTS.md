@@ -53,6 +53,15 @@ copying an existing module by hand:
   `Install-Module`: on some machines (observed on the maintainer's Windows
   box) that combination fails with "Unable to resolve package source" while
   plain `Install-Module` works. Don't add it back.
+- **A green job is not proof that the tests ran.** The Test task treats a
+  missing `Invoke-Pester` result as a failure: Pester returns nothing when
+  its NUnit report cannot be written (a control character in a failure
+  message, which recorded terminal output carries), and a null result used
+  to pass as "no failures". The macOS job went green with a failed test the
+  moment the Unix system tests started running there. When a change touches
+  tests or engines, read each CI job's own `Tests Passed` line and its skip
+  count, and compare them across the runners; eight Unix system tests once
+  skipped themselves in CI while every job stayed green.
 
 ## Quality gate (must stay green)
 
@@ -83,6 +92,14 @@ before:
   containers fail with "Container cannot be copied onto existing leaf item".
 - Pester: config lives under `New-PesterConfiguration`; `Run.TestSuiteName`
   does not exist in 5.9.x (don't use it).
+- `Get-Content` without `-Encoding UTF8` reads a BOM-less UTF-8 file as
+  ANSI on 5.1, which turns the non-ASCII text cast files carry into
+  mojibake - silently, so a test can pass for the wrong reason. Read
+  them with `-Encoding UTF8` or `File.ReadAllLines`/`ReadAllText`.
+- Under WSL, Windows interop puts `powershell.exe` on the Linux `PATH`:
+  `Get-Command powershell.exe` succeeds there and launches a Windows
+  program that cannot import the Linux module. Gate Windows-only tests on
+  `Get-BsnOperatingSystem`, never on the presence of a Windows executable.
 
 ## Module-specific constraints
 
@@ -100,6 +117,42 @@ before:
   shipped versions must carry distinct assembly versions);
   `lib/` and `obj/` are gitignored build outputs. Do not embed C# in
   here-strings inside .ps1 files.
+- NuGet dependencies of an interop project ship with the module, and the
+  PowerShell edition decides which copy is used. The rules below were all
+  verified against real releases; do not take them on faith from a green CI:
+  - `CopyLocalLockFileAssemblies` puts every dependency DLL in
+    `src/<Module>/lib/` (a class library does not copy them by default).
+  - PowerShell 7 binds the interop DLL to the library IT ships with, and
+    only when that is at least the version the DLL references. The package
+    version is therefore the floor for the PowerShell 7 releases the
+    feature can run on: System.Text.Json 10.0.x (assembly 10.0.0.0) needs
+    PowerShell 7.6+, the 8.0 line 7.4+, the 6.0 line 7.2+. On an older
+    release `Import-Module` still succeeds and the first use fails with
+    "Unable to find type ...", so Bsn.Host checks it before recording
+    (`Test-BsnCastJsonLibrary`) and documents the requirement. A test pins
+    the major version: moving it is a decision, not a Dependabot bump.
+  - Windows PowerShell 5.1 has none of these libraries: it uses the copies
+    in `lib/`, and .NET Framework binds every reference to exactly that
+    version, because a PowerShell session has no binding redirects. The
+    shipped set must satisfy every reference at exactly the referenced
+    version. The System.Text.Json lines before 10.0 do not (they rely on
+    redirects), and NuGet refuses the package versions that would close
+    them. The test "ships every dependency at exactly the version the
+    assemblies reference" pins it, and the test that runs Windows
+    PowerShell 5.1 in a child process proves the real load, because CI
+    only runs pwsh.
+  - Code that runs on both editions may only use members that exist in the
+    referenced version, and must not let the library format numbers: the
+    copy that ships to .NET Framework prints 0.1 as 0.10000000000000001.
+    `CastJson` formats numbers itself.
+  - CI's `pwsh` is always the newest release, where everything binds, so a
+    binding problem on older releases is invisible there. Before changing
+    a package version, run the module under the real oldest release that
+    must keep working (the portable zip of a release runs from any
+    folder).
+  - List bundled third-party assemblies in a `THIRD-PARTY-NOTICES.txt` in
+    the module folder: their licenses (the MIT license, for one) require
+    shipping the notice with copies.
 - Shared helpers are factored into `src/Bsn.Common` (required by the other
   modules via RequiredModules, the Az/VMware-style dependency chain):
   `Get-BsnOperatingSystem` returns the native PowerShell `BsnOperatingSystem`
@@ -163,20 +216,57 @@ before:
   `[Console]` output through the console output codepage, which turns
   CP437-unrepresentable characters into '?'). Cast files support asciicast
   v2 (absolute event times) and v3 (intervals since the previous event,
-  millisecond precision, trailing 'x' exit event) - keep both writers in
-  sync with ConvertTo-BsnAsciicast. `ConvertTo-BsnAsciicast` and
-  `Get-BsnCastTimeline` are the pure, Pester-tested conversion/parsing
-  logic - extend tests there rather than smoke-testing the native engine.
-  Unix script(1) invocation: the engine PROBES the installed script(1)
-  binary (Get-BsnScriptInvocationArguments) because util-linux 2.39+
-  (Ubuntu 24.04/26.04) rejects combining `--log-out` with a trailing
-  positional typescript file ('unexpected number of arguments') - which
-  made recordings come back empty - while 2.37 and older accept both
-  shapes; do not hardcode either invocation shape or parse util-linux
-  version strings. The `-Command` Unix system test plus the
-  Get-BsnScriptInvocationArguments unit tests keep this pinned, and the
-  CI matrix runs a pinned ubuntu-24.04 image (util-linux 2.39) next to
-  ubuntu-latest so two util-linux generations are covered.
+  millisecond precision, trailing 'x' exit event). Both engines write
+  their header and event lines through `CastJson`
+  (`src/Bsn.Host/src/CastJson.cs`, System.Text.Json, pinned by the NUnit
+  `CastJsonTests`): one compact JSON value per line, numbers formatted by
+  the class itself - do not assemble cast lines by hand in either engine.
+  The header's layout is declared with `JsonPropertyName` attributes on
+  `CastJson`'s header type (and on `AuditMetadata`); System.Text.Json
+  serializes the header from them.
+  `ConvertTo-BsnAsciicast` and `Get-BsnCastTimeline` are the pure,
+  Pester-tested conversion/parsing logic - extend tests there rather than
+  smoke-testing the native engine.
+  Unix script(1) engine rules, each learned from a real defect:
+  - The recorded command goes to script(1) as ONE argument
+    (`ProcessStartInfo.ArgumentList`, also in the probe of
+    `Resolve-BsnScriptInvocation`), never inside an argument string: a
+    quote in `-Command` broke the invocation and produced a cast without
+    events.
+  - util-linux's script(1) writes "Script started on" and "Script done
+    on" messages into `--log-out`, and its `--log-timing` covers only the
+    session's output. `Select-BsnSessionOutput` leaves the messages out
+    before the timing is applied; without it the whole session lands in
+    the cast as one untimed block. macOS's BSD script(1) leaves both out
+    in quiet mode.
+  - Both flavours flush their log as it goes (`-f` on util-linux, `-t 0`
+    on BSD, whose default is 30 seconds): the engine kills script(1) on a
+    stop request, and a buffered log would lose the end of the session.
+  - The engine PROBES the installed script(1) binary
+    (`Resolve-BsnScriptInvocation`) because util-linux 2.39+ (Ubuntu
+    24.04/26.04) rejects combining `--log-out` with a trailing positional
+    typescript file ('unexpected number of arguments') - which made
+    recordings come back empty - while 2.37 and older accept both shapes;
+    do not hardcode either invocation shape or parse util-linux version
+    strings. The Unix system tests plus the `Resolve-BsnScriptInvocation`
+    and `Start-BsnUnixPtyRecording` unit tests keep this pinned, and the
+    CI matrix runs a pinned ubuntu-24.04 image (util-linux 2.39) next to
+    ubuntu-latest so two util-linux generations are covered.
+- Cast header audit metadata (the `bsn` block a recording stamps with
+  who ran the session, where, and which module and PowerShell recorded
+  it) has ONE definition: `AuditMetadata` in
+  `src/Bsn.Host/src/AuditMetadata.cs`, an interop-assembly type whose
+  fields declare their block keys with `JsonPropertyName` attributes;
+  `CastJson.Header` serializes it into the header, and the output is
+  pinned byte for byte by the NUnit `AuditMetadataTests`. Do not
+  hand-build the block: `Start-InteractiveTranscript` creates the object,
+  the engine wrappers take it as `-AuditMetadata` (the ConPTY engine
+  receives the typed object, not JSON text), and both cast writers hand
+  it to `CastJson.Header`. Readers probe the block key by
+  key with `Get-BsnObjectProperty`, and casts without it must keep
+  converting. A new field therefore touches the C# property (with its
+  attribute and a row in the tests' `FieldCases()`), the gather site in
+  `Start-InteractiveTranscript`, and the readers.
 - `src/Bsn.SystemManagement/scripts/Suspend-Action.ps1` must remain fully
   self-contained (it is shipped alone to remote machines via
   `Invoke-Command -FilePath`, which cannot carry the module's DLL): its
@@ -249,12 +339,21 @@ before:
 - System tests (`src/Bsn.Host/tests/system/`): full end-to-end tests
   that exercise the real recording engines (no mocks). Windows uses a
   hidden-console runner process (CI has redirected stdio which breaks
-  ConPTY); Linux uses in-process script(1). Cross-check against
-  independent tools: asciinema (Linux, reference asciicast
-  implementation), tmux pipe-pane (Linux, independent PTY), and
-  console-logger (Windows, independent ConPTY wrapper from
-  rhubarb-geek-nz/console-logger, cited in RFC 421). All cross-check
-  tests skip gracefully when their tool is unavailable. See
+  ConPTY); Linux and macOS record in-process, because script(1)
+  allocates its own pseudo-terminal - which is also why no Unix system
+  test may skip for redirected stdio: eight of them did, and CI stayed
+  green while the engine could not record a command with a quote and
+  mistimed every Linux recording. The Unix tests have to run on the CI
+  runners; reproduce locally in WSL (stdin from /dev/null, output
+  redirected is what CI looks like). Cross-check against independent
+  tools: asciinema (Linux/macOS, reference asciicast implementation), tmux
+  pipe-pane (Linux/macOS, independent PTY), and console-logger (Windows,
+  independent ConPTY wrapper from rhubarb-geek-nz/console-logger, cited
+  in RFC 421); CI installs asciinema and tmux on every Unix runner, and
+  the cross-check tests skip only when their tool is unavailable.
+  `tests/unit/Start-BsnUnixPtyRecording.Tests.ps1` drives the Unix engine
+  through both script(1) flavours with shell shims, so the BSD path runs
+  on Linux CI and the util-linux path on macOS CI. See
   tests/system/README.md for the full architecture diagram.
 - C# unit tests (NUnit + coverlet) live in `src/Bsn.Host/tests/csharp`
   and run inside the build's Test task (`dotnet test`, Cobertura
@@ -264,10 +363,15 @@ before:
   (`PtyRecorder.cs` ConPTY engine/CastWriter/console P/Invoke,
   `PowerProf.cs` Win32 interop) - do not replace those explicit
   per-file ignores with a blanket C# ignore, and keep new testable C#
-  in its own covered file (e.g. `TerminalQueryFilter.cs`).
+  in its own covered file (e.g. `TerminalQueryFilter.cs`, `CastJson.cs`).
 - Dependabot (`.github/dependabot.yml`): weekly github-actions updates
   grouped into a single PR (labels `dependencies`/`ci`, commit prefix
-  `ci`); dormant nuget entries per csproj for future PackageReferences.
+  `ci`); weekly nuget updates per interop project (live for Bsn.Host's
+  System.Text.Json, dormant for Bsn.SystemManagement until it takes a
+  package). A major bump of System.Text.Json raises the PowerShell 7
+  floor of Bsn.Host (see the NuGet rules above) and fails the test that
+  pins the major version: treat it as a compatibility decision, not a
+  routine update.
   PowerShell module deps (Pester etc.) have no Dependabot ecosystem -
   MinimumVersion gates in the bootstrap are the manual mechanism, and the
   same applies to the DocFX tool pinned in `.config/dotnet-tools.json`

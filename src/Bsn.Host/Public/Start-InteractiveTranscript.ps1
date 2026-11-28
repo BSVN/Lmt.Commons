@@ -143,6 +143,10 @@ using module Bsn.Common
       restored afterwards, so the live view renders byte-writing TUIs
       correctly even on OEM-codepage consoles (cmd, Windows PowerShell
       5.1 hosts).
+    - Recording runs on Windows PowerShell 5.1 and on PowerShell 7.6 or
+      later. On PowerShell 7.0 to 7.5 Start-InteractiveTranscript fails
+      before anything is recorded, with a message that says why; the
+      cmdlets that read, play and convert recordings keep working there.
 
     Implements https://github.com/PowerShell/PowerShell/issues/28353
     following the parameter and format semantics of PowerShell-RFC#421 at
@@ -198,7 +202,6 @@ function Start-InteractiveTranscript {
         if (-not $PSCmdlet.ShouldProcess($resolvedCastPath, 'Record interactive terminal session')) {
             return
         }
-
         if ($ShowRecordingIndicator.IsPresent -and $Command) {
             Write-Warning -Message '-ShowRecordingIndicator applies only to the interactive shell mode (used when -Command is omitted); the indicator is not applied to command recordings.'
         }
@@ -213,6 +216,33 @@ function Start-InteractiveTranscript {
             Split-Path -Leaf -Path (Get-BsnDefaultShell)
         }
 
+        # Capture-time audit metadata (the cast header's "bsn" block): the
+        # recording stamps who/where/what-version into the artifact itself,
+        # so downstream consumers (ConvertTo-BsnTranscript,
+        # ConvertTo-BsnAuditRecord, Export-BsnAuditLog) derive the session
+        # context from the recording instead of asking for it. The session
+        # id is a GUID minted at capture time - the recording and its
+        # downstream audit artifacts share one stable identity.
+        #
+        # The values are gathered here, once, into a single AuditMetadata
+        # object that is passed to the engine wrapper and, from there, to
+        # the cast writer.
+        $owningModule = $MyInvocation.MyCommand.ScriptBlock.Module
+        $recordedBy = 'bsn.host'
+        if ($owningModule -and $owningModule.Version) {
+            $recordedBy = 'bsn.host {0}' -f $owningModule.Version
+        }
+        $auditMetadata = [Bsn.Host.Interop.AuditMetadata]@{
+            SessionId    = [guid]::NewGuid().ToString()
+            RecordedBy   = $recordedBy
+            ComputerName = [System.Net.Dns]::GetHostName()
+            UserName     = [Environment]::UserName
+            ProcessId    = $PID
+            PSVersion    = $PSVersionTable.PSVersion.ToString()
+            Edition      = [string]$PSVersionTable.PSEdition
+        }
+        Write-Verbose -Message ('Recording audit metadata: session {0} on {1} as {2}' -f $auditMetadata.SessionId, $auditMetadata.ComputerName, $auditMetadata.UserName)
+
         # Stop signaling channel: Stop-InteractiveTranscript (running inside the recorded
         # session) creates this file; the recording engine finalizes and returns.
         $previousStopFile = $env:BsnHostRecordingStopFile
@@ -222,12 +252,12 @@ function Start-InteractiveTranscript {
         try {
             if ($platform -eq [BsnOperatingSystem]::Windows) {
                 $commandLine = Get-BsnRecordingCommandLine -Command $Command -ShowRecordingIndicator:$ShowRecordingIndicator.IsPresent
-                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion
+                $result = Start-BsnWindowsPtyRecording -CommandLine $commandLine -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -AuditMetadata $auditMetadata
             }
             else {
                 # Linux and macOS are both Unix: they share the script(1)-based engine,
                 # which picks util-linux (exact timing) or BSD script (approximated) itself.
-                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion
+                $result = Start-BsnUnixPtyRecording -Command $Command -CastPath $resolvedCastPath -RecordInput:$RecordInput.IsPresent -ShellName $shellName -StopFilePath $stopFilePath -CastVersion $CastVersion -AuditMetadata $auditMetadata
             }
         }
         finally {

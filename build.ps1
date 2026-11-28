@@ -286,8 +286,19 @@ $taskMap = @{
                 $ErrorActionPreference = $previousErrorActionPreference
                 $env:PSModulePath = $previousModulePath
             }
+            if ($null -eq $result) {
+                # Invoke-Pester returns nothing when its final step fails - for
+                # one, when the NUnit XML report cannot hold a character in a
+                # failure message (terminal output carries control characters).
+                # That happens while a test HAS failed, and a null result used
+                # to pass the checks below: the job went green.
+                throw ('{0}: Invoke-Pester returned no result, so its report could not be written; see the errors above. Treating it as failed.' -f $module.Name)
+            }
             if ($result.FailedCount -gt 0) {
                 throw ('{0}: {1} of {2} test(s) failed.' -f $module.Name, $result.FailedCount, $result.TotalCount)
+            }
+            if ($result.TotalCount -le 0) {
+                throw ('{0}: no tests were found.' -f $module.Name)
             }
             Write-Host ("==> {0}: {1} test(s) passed." -f $module.Name, $result.PassedCount)
 

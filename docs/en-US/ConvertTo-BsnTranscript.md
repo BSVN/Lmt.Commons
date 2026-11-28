@@ -30,10 +30,15 @@ and PowerShell 7, on every operating system.
 ## Header modes
 
 `-HeaderMode Standard` (default) mimics the Start-Transcript frame. The
-engine-derived fields (Username, RunAs User, Machine, Process ID,
-PSVersion, PSEdition) are not recorded inside a cast: they are written
-blank - real transcripts emit blank fields too - unless supplied via
-parameters. Host Application is derived from the cast header
+engine-derived fields are not part of the asciicast format. Recordings
+made by `Start-InteractiveTranscript` carry most of them (Username,
+Machine, Process ID, PSVersion, PSEdition) in the cast header's
+capture-time `bsn` block, and the converter fills those fields from it
+automatically; for other casts they are written blank - real transcripts
+emit blank fields too. RunAs User is always blank unless `-RunAsUser` is
+supplied. Any of these fields can be overridden with its parameter
+(`-UserName`, `-RunAsUser`, `-ComputerName`, `-ProcessId`, `-PSVersion`,
+`-Edition`). Host Application is derived from the cast header
 (`command`, else `env.SHELL`) and can be overridden.
 
 ```text
@@ -69,9 +74,10 @@ Cast SHA256: 4c9feab0...          <- proves which cast the text was rendered fro
 Exit Code: 0                      <- v3 recordings only
 ```
 
-The session id defaults to a deterministic value derived from the cast
-hash (`bsn-` plus its first twelve hex characters) and can be supplied
-via `-SessionId`.
+The session id is the recorded one (from the cast header's capture-time
+`bsn` block) when present, else a deterministic value derived from the
+cast hash (`bsn-` plus its first twelve hex characters); `-SessionId`
+overrides it.
 
 ## Rendering fidelity
 

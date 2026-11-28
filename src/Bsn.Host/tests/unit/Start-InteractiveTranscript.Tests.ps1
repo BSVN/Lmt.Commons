@@ -21,6 +21,27 @@ BeforeAll {
     # Bsn.Common resolvable. Pull the enum value from the defining module's
     # own scope instead, where the literal always resolves.
     $script:BsnWindows = & (Get-Module -Name 'Bsn.Common') { [BsnOperatingSystem]::Windows }
+
+    # Shared assertion for the capture-metadata tests: a mocked engine
+    # wrapper must have received the recording's AuditMetadata object,
+    # holding the real session context in every field. The wrapper mock
+    # stores the object it was called with in $script:CapturedMetadata.
+    $script:AssertCaptureMetadata = {
+        $captured = $script:CapturedMetadata
+        $captured | Should -Not -BeNullOrEmpty -Because 'the engine wrapper must receive the audit metadata object'
+        # The seven fields of the audit block; IsEmpty only tells whether
+        # the object carries any of them.
+        ((@($captured.PSObject.Properties.Name | Where-Object { $_ -ne 'IsEmpty' }) | Sort-Object) -join ',') | Should -Be 'ComputerName,Edition,ProcessId,PSVersion,RecordedBy,SessionId,UserName'
+        $captured.IsEmpty | Should -BeFalse -Because 'the recording carries its session context'
+        Should -Actual $captured.UserName -Be ([Environment]::UserName)
+        Should -Actual $captured.ComputerName -Be ([System.Net.Dns]::GetHostName())
+        Should -Actual $captured.ProcessId -Be $PID
+        Should -Actual $captured.PSVersion -Be $PSVersionTable.PSVersion.ToString()
+        Should -Actual $captured.Edition -Be $PSVersionTable.PSEdition
+        Should -Actual $captured.RecordedBy -Be ('bsn.host {0}' -f (Get-Module -Name 'Bsn.Host').Version)
+        $parsedSessionId = [guid]::Empty
+        [guid]::TryParse($captured.SessionId, [ref]$parsedSessionId) | Should -BeTrue -Because 'the session id is a GUID minted at capture time'
+    }
 }
 
 Describe 'Start-InteractiveTranscript' {
@@ -99,6 +120,47 @@ Describe 'Start-InteractiveTranscript' {
             Start-InteractiveTranscript -Command 'htop' -Path (Join-Path -Path $TestDrive -ChildPath 'b.cast')
 
             Should -Invoke -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { $Command -eq 'htop' }
+        }
+
+        It 'hands the audit metadata object to the Windows engine' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            $script:CapturedMetadata = $null
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedMetadata = $AuditMetadata
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'metadata-win.cast')
+
+            & $script:AssertCaptureMetadata
+        }
+
+        It 'hands the same audit metadata object to the Unix engine' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Linux' }
+            $script:CapturedMetadata = $null
+            Mock -CommandName Start-BsnUnixPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedMetadata = $AuditMetadata
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Command 'echo hi' -Path (Join-Path -Path $TestDrive -ChildPath 'metadata-unix.cast')
+
+            & $script:AssertCaptureMetadata
+        }
+
+        It 'mints a new session id for every recording' {
+            Mock -CommandName Get-BsnOperatingSystem -ModuleName 'Bsn.Host' { 'Windows' }
+            $script:CapturedSessionIds = [System.Collections.Generic.List[string]]::new()
+            Mock -CommandName Start-BsnWindowsPtyRecording -ModuleName 'Bsn.Host' {
+                $script:CapturedSessionIds.Add($AuditMetadata.SessionId)
+                [pscustomobject]@{ ExitCode = 0; DurationSec = 1.0; StoppedByRequest = $false; Completed = $true }
+            }
+
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'session-a.cast')
+            Start-InteractiveTranscript -Path (Join-Path -Path $TestDrive -ChildPath 'session-b.cast')
+
+            @($script:CapturedSessionIds).Count | Should -Be 2
+            $script:CapturedSessionIds[0] | Should -Not -Be $script:CapturedSessionIds[1]
         }
 
         It 'propagates the recorded exit code to LASTEXITCODE' {
@@ -254,6 +316,42 @@ Describe 'Start-InteractiveTranscript' {
             }
             else {
                 Set-ItResult -Skipped -Because 'requires exactly one redirected handle.'
+            }
+        }
+
+        It 'fails before recording when PowerShell ships an older System.Text.Json than the cast writer needs' {
+            # What PowerShell 7.4 looks like next to a cast writer built against
+            # System.Text.Json 10.0 - without needing that release at hand.
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '8.0.0.0' -PowerShellVersion '7.4.22' } } |
+                Should -Throw '*System.Text.Json 10.0.0.0 or newer*PowerShell 7.4.22*ships 8.0.0.0*'
+        }
+
+        It 'accepts a PowerShell that ships the System.Text.Json the cast writer needs, or newer' {
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '10.0.0.0' -PowerShellVersion '7.6.0' } } | Should -Not -Throw
+            { & (Get-Module -Name 'Bsn.Host') { Test-BsnCastJsonLibrary -RequiredVersion '10.0.0.0' -AvailableVersion '11.0.0.0' -PowerShellVersion '7.7.0' } } | Should -Not -Throw
+        }
+
+        It 'checks the System.Text.Json of the running PowerShell against the copy the module ships' {
+            Mock -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' { }
+
+            # Run the pre-flight for the real platform. Whatever it then says
+            # about redirected standard I/O is not this test's concern.
+            try {
+                & (Get-Module -Name 'Bsn.Host') { Test-BsnRecordingEnvironment -Platform (Get-BsnOperatingSystem) }
+            }
+            catch {
+                $null = $_
+            }
+
+            if ($PSVersionTable.PSEdition -eq 'Core') {
+                $moduleJsonVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path -Path (Join-Path -Path $moduleRoot -ChildPath 'lib') -ChildPath 'System.Text.Json.dll')).Version
+                $inBoxJsonVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path -Path $PSHOME -ChildPath 'System.Text.Json.dll')).Version
+                Should -Invoke -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' -Times 1 -Exactly -Scope It -ParameterFilter { ($RequiredVersion -eq $moduleJsonVersion) -and ($AvailableVersion -eq $inBoxJsonVersion) }
+            }
+            else {
+                # Windows PowerShell 5.1 has no System.Text.Json of its own: the
+                # module's shipped copy is used, and there is nothing to compare.
+                Should -Invoke -CommandName Test-BsnCastJsonLibrary -ModuleName 'Bsn.Host' -Times 0 -Exactly -Scope It
             }
         }
     }

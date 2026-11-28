@@ -209,8 +209,12 @@ namespace Bsn.Host.Interop
         /// recording to castPath (asciicast v2 or v3 depending on castVersion). When
         /// stopFilePath is non-empty, creating that file terminates the recorded process
         /// and finalizes the recording (the Stop-InteractiveTranscript signaling channel).
+        /// auditMetadata is the optional capture-time audit metadata (session id,
+        /// recorded-by, host, user, pid, PS version); when it is given and carries any
+        /// value it is written under the header's "bsn" key. Null records a header
+        /// without the block.
         /// </summary>
-        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion)
+        public static RecordingResult Run(string commandLine, string castPath, bool recordInput, string shellName, string stopFilePath, int castVersion, AuditMetadata auditMetadata)
         {
             IntPtr hRealIn = GetStdHandle(STD_INPUT_HANDLE);
             IntPtr hRealOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -297,7 +301,7 @@ namespace Bsn.Host.Interop
                 startupInfo.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
                 startupInfo.lpAttributeList = attributeList;
 
-                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion);
+                cast = new CastWriter(castPath, (int)width, (int)height, shellName, recordInput, castVersion, auditMetadata);
 
                 // Raw VT input so keystrokes (including escape sequences for TUI apps) pass through.
                 if (hadConsoleMode) { SetConsoleMode(hRealIn, ENABLE_VIRTUAL_TERMINAL_INPUT); }
@@ -462,6 +466,7 @@ namespace Bsn.Host.Interop
         private StreamWriter writer;
         private readonly object sync = new object();
         private int castVersion;
+        private int timeDecimals;
         private double previousElapsed;
         private Decoder outputDecoder;
         private Decoder inputDecoder;
@@ -471,7 +476,7 @@ namespace Bsn.Host.Interop
         // sequences that span read boundaries are filtered correctly.
         private readonly TerminalQueryFilter outputQueryFilter = new TerminalQueryFilter();
 
-        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion)
+        public CastWriter(string path, int width, int height, string shellName, bool recordedInput, int castVersion, AuditMetadata auditMetadata)
         {
             writer = new StreamWriter(path, false, new UTF8Encoding(false));
             writer.NewLine = "\n";
@@ -480,6 +485,9 @@ namespace Bsn.Host.Interop
             // data - a 0-byte cast or truncated final event (issue #6).
             writer.AutoFlush = true;
             this.castVersion = castVersion;
+            // v3 events carry intervals with millisecond precision, v2 events
+            // absolute times with microsecond precision.
+            this.timeDecimals = (castVersion == 3) ? 3 : 6;
             previousElapsed = 0.0;
             // Persistent decoders: handle multi-byte UTF-8 sequences that span
             // chunk boundaries without corrupting them to U+FFFD (issue #5).
@@ -491,28 +499,13 @@ namespace Bsn.Host.Interop
             {
                 title = title + " (input captured)";
             }
-            if (castVersion == 3)
-            {
-                // asciicast v3 header: version + term{cols,rows} are required.
-                writer.WriteLine("{\"version\": 3, \"term\": {\"cols\": " + width.ToString(CultureInfo.InvariantCulture)
-                    + ", \"rows\": " + height.ToString(CultureInfo.InvariantCulture)
-                    + ", \"type\": \"xterm-256color\"}"
-                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"command\": \"" + Escape(shellName) + "\""
-                    + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
-            }
-            else
-            {
-                writer.WriteLine("{\"version\": 2, \"width\": " + width.ToString(CultureInfo.InvariantCulture)
-                    + ", \"height\": " + height.ToString(CultureInfo.InvariantCulture)
-                    + ", \"timestamp\": " + timestamp.ToString(CultureInfo.InvariantCulture)
-                    + ", \"title\": \"" + Escape(title) + "\""
-                    + ", \"env\": {\"SHELL\": \"" + Escape(shellName) + "\", \"TERM\": \"xterm-256color\"}}");
-            }
+            // The header line is written by the JSON writer both recording
+            // engines share (CastJson), which also writes the audit metadata
+            // block and leaves it out for a null object or an empty one.
+            writer.WriteLine(CastJson.Header(castVersion, width, height, timestamp, shellName, title, auditMetadata));
         }
 
-        private string FormatTime(double seconds)
+        private double EventTime(double seconds)
         {
             if (castVersion == 3)
             {
@@ -520,9 +513,9 @@ namespace Bsn.Host.Interop
                 double interval = seconds - previousElapsed;
                 if (interval < 0) { interval = 0; }
                 previousElapsed = seconds;
-                return interval.ToString("0.###", CultureInfo.InvariantCulture);
+                return interval;
             }
-            return seconds.ToString("0.######", CultureInfo.InvariantCulture);
+            return seconds;
         }
 
         public void WriteEvent(double seconds, bool isInput, byte[] chunk)
@@ -541,22 +534,20 @@ namespace Bsn.Host.Interop
                 text = outputQueryFilter.Filter(text);
             }
 
-            string escaped = Escape(text);
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"" + (isInput ? "i" : "o") + "\", \"" + escaped + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, isInput ? "i" : "o", text));
             }
         }
 
         public void WriteResize(double seconds, int width, int height)
         {
+            string size = width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture);
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"r\", \"" + width.ToString(CultureInfo.InvariantCulture) + "x" + height.ToString(CultureInfo.InvariantCulture) + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, "r", size));
             }
         }
 
@@ -565,8 +556,7 @@ namespace Bsn.Host.Interop
             lock (sync)
             {
                 if (writer == null) { return; }
-                writer.WriteLine("[" + FormatTime(seconds)
-                    + ", \"x\", \"" + exitCode.ToString(CultureInfo.InvariantCulture) + "\"]");
+                writer.WriteLine(CastJson.Event(EventTime(seconds), timeDecimals, "x", exitCode.ToString(CultureInfo.InvariantCulture)));
             }
         }
 
@@ -582,32 +572,13 @@ namespace Bsn.Host.Interop
                     string filterTail = outputQueryFilter.FlushRemaining();
                     if (filterTail.Length > 0)
                     {
-                        writer.WriteLine("[" + FormatTime(previousElapsed) + ", \"o\", \"" + Escape(filterTail) + "\"]");
+                        writer.WriteLine(CastJson.Event(EventTime(previousElapsed), timeDecimals, "o", filterTail));
                     }
 
                     writer.Dispose();
                     writer = null;
                 }
             }
-        }
-
-        private static string Escape(string text)
-        {
-            StringBuilder escaped = new StringBuilder(text.Length + 8);
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == '\\') { escaped.Append("\\\\"); }
-                else if (c == '"') { escaped.Append("\\\""); }
-                else if (c == '\n') { escaped.Append("\\n"); }
-                else if (c == '\r') { escaped.Append("\\r"); }
-                else if (c == '\t') { escaped.Append("\\t"); }
-                else if (c == '\b') { escaped.Append("\\b"); }
-                else if (c == '\f') { escaped.Append("\\f"); }
-                else if (c < 0x20 || c == 0x7f) { escaped.Append("\\u" + ((int)c).ToString("x4", CultureInfo.InvariantCulture)); }
-                else { escaped.Append(c); }
-            }
-            return escaped.ToString();
         }
     }
 }

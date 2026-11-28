@@ -16,6 +16,34 @@
 
     The engine requires Windows 10 1809+ (CreatePseudoConsole); the public
     cmdlet checks this before dispatching.
+
+    -AuditMetadata is the recording's capture-time audit metadata. It is
+    passed on to the cast header's "bsn" block; see AuditMetadata.
+
+.PARAMETER CommandLine
+    Command line the engine runs inside the pseudo-console.
+
+.PARAMETER CastPath
+    Path of the cast file to write.
+
+.PARAMETER RecordInput
+    Also records console input as 'i' events.
+
+.PARAMETER ShellName
+    Name of the recorded command or shell, recorded in the header as
+    env.SHELL and, in a v3 header, as "command". Default 'shell'.
+
+.PARAMETER StopFilePath
+    When set, creating this file ends the recording. It is the channel
+    Stop-InteractiveTranscript uses from inside the recorded session.
+
+.PARAMETER CastVersion
+    Asciicast format to write: 2 (default) or 3.
+
+.PARAMETER AuditMetadata
+    Capture-time audit metadata for the cast header's "bsn" block, as a
+    AuditMetadata object; Start-InteractiveTranscript creates one per
+    recording. Omit it to leave the block out.
 #>
 function Start-BsnWindowsPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
@@ -34,11 +62,16 @@ function Start-BsnWindowsPtyRecording {
         [string]$StopFilePath,
 
         [ValidateSet(2, 3)]
-        [int]$CastVersion = 2
+        [int]$CastVersion = 2,
+
+        # Capture-time audit metadata, written into the header's "bsn" block.
+        [Bsn.Host.Interop.AuditMetadata]$AuditMetadata
     )
 
+    # The audit metadata object is the engine's own type, so it is passed
+    # as-is; the engine serializes it into the header (null: no block).
     try {
-        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion)
+        $engineResult = [Bsn.Host.Interop.PtyRecorder]::Run($CommandLine, $CastPath, $RecordInput.IsPresent, $ShellName, $StopFilePath, $CastVersion, $AuditMetadata)
     }
     catch [System.Runtime.InteropServices.EntryPointNotFoundException] {
         throw 'Interactive transcripts on Windows require pseudo-console support (Windows 10 1809 or newer).'

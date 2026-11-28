@@ -26,27 +26,33 @@ BeforeAll {
         Set-Content -LiteralPath $script:RejectingShimPath -Value "#!/bin/sh`nexit 1" -NoNewline
         & chmod +x $script:RejectingShimPath
     }
+
+    # Resolve-BsnScriptInvocation is private: invoke it through the defining
+    # module's scope (the same way the engine calls it). It returns a list,
+    # one element per argument.
+    $script:ResolveArguments = {
+        param([string]$ScriptPath, [string]$Command)
+        return @(& (Get-Module -Name 'Bsn.Host') {
+            param($p, $c, $t, $o)
+            Resolve-BsnScriptInvocation -ScriptPath $p -Command $c -TimingPath $t -OutputPath $o
+        } $ScriptPath $Command '/tmp/t.json' '/tmp/o.log')
+    }
 }
 
 Describe 'Resolve-BsnScriptInvocation' {
     # https://github.com/BSVN/Lmt.Commons/issues/5 (Linux verification):
     # util-linux 2.39+ rejects combining --log-out with a trailing positional
     # typescript file, so the engine probes the installed binary and picks the
-    # invocation shape it accepts. The probe runs a no-op child ('-c "true"')
+    # invocation shape it accepts. The probe runs a no-op child ('-c true')
     # through the shim, so the shim's exit code decides the branch.
     It 'keeps the classic positional form when script(1) accepts it (util-linux <= 2.37)' {
         if ((Get-BsnOperatingSystem) -eq $script:BsnWindows) {
             Set-ItResult -Skipped -Because 'the fake script(1) shims are Unix shell executables; the probe is exercised end to end by the Unix system tests on Linux CI.'
         }
 
-        # Resolve-BsnScriptInvocation is private: invoke it through the
-        # defining module's scope (the same way the engine calls it).
-        $arguments = & (Get-Module -Name 'Bsn.Host') {
-            param($p, $c, $t, $o)
-            Resolve-BsnScriptInvocation -ScriptPath $p -Command $c -TimingPath $t -OutputPath $o
-        } $script:AcceptingShimPath 'echo MARKER' '/tmp/t.json' '/tmp/o.log'
+        $arguments = & $script:ResolveArguments -ScriptPath $script:AcceptingShimPath -Command 'echo MARKER'
 
-        $arguments | Should -BeLike '*-c "echo MARKER" --log-timing "/tmp/t.json" --log-out "/tmp/o.log" /dev/null*' -Because 'a compatible binary must keep the historically tested positional form'
+        ($arguments -join ' ') | Should -Be '-q -f -e -c echo MARKER --log-timing /tmp/t.json --log-out /tmp/o.log /dev/null' -Because 'a compatible binary must keep the historically tested positional form'
     }
 
     It 'falls back to the options-only form when script(1) rejects the positional file (util-linux >= 2.39)' {
@@ -54,13 +60,9 @@ Describe 'Resolve-BsnScriptInvocation' {
             Set-ItResult -Skipped -Because 'the fake script(1) shims are Unix shell executables; the probe is exercised end to end by the Unix system tests on Linux CI.'
         }
 
-        $arguments = & (Get-Module -Name 'Bsn.Host') {
-            param($p, $c, $t, $o)
-            Resolve-BsnScriptInvocation -ScriptPath $p -Command $c -TimingPath $t -OutputPath $o
-        } $script:RejectingShimPath 'echo MARKER' '/tmp/t.json' '/tmp/o.log'
+        $arguments = & $script:ResolveArguments -ScriptPath $script:RejectingShimPath -Command 'echo MARKER'
 
-        $arguments | Should -BeLike '*-c "echo MARKER" --log-timing "/tmp/t.json" --log-out "/tmp/o.log"*' -Because 'a rejecting binary must get the options-only invocation'
-        $arguments | Should -Not -BeLike '*/dev/null*' -Because 'the positional typescript file is what util-linux >= 2.39 rejects'
+        ($arguments -join ' ') | Should -Be '-q -f -e -c echo MARKER --log-timing /tmp/t.json --log-out /tmp/o.log' -Because 'a rejecting binary must get the options-only invocation'
     }
 
     It 'includes the recorded command and both log paths in every invocation shape' {
@@ -69,13 +71,28 @@ Describe 'Resolve-BsnScriptInvocation' {
         }
 
         foreach ($shim in @($script:AcceptingShimPath, $script:RejectingShimPath)) {
-            $arguments = & (Get-Module -Name 'Bsn.Host') {
-                param($p, $c, $t, $o)
-                Resolve-BsnScriptInvocation -ScriptPath $p -Command $c -TimingPath $t -OutputPath $o
-            } $shim 'uname -s' '/tmp/t.json' '/tmp/o.log'
-            $arguments.Contains('uname -s') | Should -BeTrue -Because 'the recorded command must be part of the -c argument'
-            $arguments.Contains('/tmp/t.json') | Should -BeTrue -Because 'the timing log path must be passed to --log-timing'
-            $arguments.Contains('/tmp/o.log') | Should -BeTrue -Because 'the output log path must be passed to --log-out'
+            $arguments = & $script:ResolveArguments -ScriptPath $shim -Command 'uname -s'
+
+            $arguments | Should -Contain 'uname -s' -Because 'the recorded command is one argument'
+            $arguments | Should -Contain '/tmp/t.json' -Because 'the timing log path is the argument after --log-timing'
+            $arguments | Should -Contain '/tmp/o.log' -Because 'the output log path is the argument after --log-out'
+        }
+    }
+
+    It 'passes the recorded command as one argument, whatever it contains' {
+        if ((Get-BsnOperatingSystem) -eq $script:BsnWindows) {
+            Set-ItResult -Skipped -Because 'the fake script(1) shims are Unix shell executables; the probe is exercised end to end by the Unix system tests on Linux CI.'
+        }
+
+        # Quotes, pipes, an ampersand, redirections, a caret and a backslash:
+        # as one argument string with the command inside quotes, this broke
+        # script(1) with "unexpected number of arguments" and no cast at all.
+        $command = 'pwsh -NoProfile -Command "Write-Output ''a|b&c<d>e^f''; Write-Output \"q\\w\""'
+        foreach ($shim in @($script:AcceptingShimPath, $script:RejectingShimPath)) {
+            $arguments = & $script:ResolveArguments -ScriptPath $shim -Command $command
+
+            $commandIndex = [array]::IndexOf($arguments, '-c') + 1
+            $arguments[$commandIndex] | Should -Be $command -Because 'script(1) must receive the command as one argument, exactly as it was given'
         }
     }
 }

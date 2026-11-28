@@ -20,12 +20,13 @@ enum BsnRecordingFormat {
 }
 
 # Header frame of ConvertTo-BsnTranscript output:
-#   Standard - Start-Transcript-like header; engine-derived fields that a
-#              cast cannot record (Username, Machine, PSVersion, ...) are
-#              blank unless supplied via parameters.
-#   Bsn      - adds the audit frame: deterministic session id, recorded-by
-#              version, terminal size, cast file path, cast SHA-256 and
-#              the v3 exit code.
+#   Standard - Start-Transcript-like header. Its engine-derived fields
+#              (Username, Machine, Process ID, PSVersion, PSEdition) are
+#              filled from the recording's audit metadata when the cast
+#              carries it, else blank, and can be supplied as parameters.
+#   Bsn      - adds the audit frame: session id, recorded-by version,
+#              terminal size, cast file path, cast SHA-256 and the v3 exit
+#              code.
 enum BsnTranscriptHeaderMode {
     Standard
     Bsn

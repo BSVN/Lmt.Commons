@@ -11,12 +11,50 @@
     - BSD script (macOS): records the raw stream only; timestamps are
       approximated by spreading line events across the measured duration.
 
-    The script process is monitored in a polling loop; creating StopFilePath
+    The recorded command is handed to script(1) as one argument, as it was
+    given, so it may contain quotes, pipes and redirections. The script
+    process is monitored in a polling loop; creating StopFilePath
     on disk (the Stop-InteractiveTranscript signaling channel) terminates it
-    and finalizes the recording.
+    and finalizes the recording. Both script(1) flavours are asked to write
+    their log as it goes, so a recording that is stopped keeps everything
+    the session printed before the stop.
+
+    When the calling process has no terminal on its standard input, it is
+    at its end right away; script(1) is then given an input pipe that stays
+    open, so that BSD script(1) does not send an end-of-file character into
+    the session, which the terminal would echo into the recording.
 
     Input recording is not supported on Unix in this release; a warning is
     emitted when -RecordInput is requested.
+
+    -AuditMetadata is the recording's capture-time audit metadata. It is
+    passed on to the cast header's "bsn" block; see AuditMetadata.
+
+.PARAMETER Command
+    Command to record. Omit it to record the default interactive shell.
+
+.PARAMETER CastPath
+    Path of the cast file to write.
+
+.PARAMETER RecordInput
+    Requested input recording. Not supported on Unix: a warning is
+    emitted and only terminal output is recorded.
+
+.PARAMETER ShellName
+    Name of the recorded command or shell, recorded in the header as
+    env.SHELL and, in a v3 header, as "command". Default 'shell'.
+
+.PARAMETER StopFilePath
+    When set, creating this file ends the recording. It is the channel
+    Stop-InteractiveTranscript uses from inside the recorded session.
+
+.PARAMETER CastVersion
+    Asciicast format to write: 2 (default) or 3.
+
+.PARAMETER AuditMetadata
+    Capture-time audit metadata for the cast header's "bsn" block, as a
+    AuditMetadata object; Start-InteractiveTranscript creates one per
+    recording. Omit it to leave the block out.
 #>
 function Start-BsnUnixPtyRecording {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is owned by the public Start-InteractiveTranscript cmdlet.')]
@@ -34,7 +72,10 @@ function Start-BsnUnixPtyRecording {
         [string]$StopFilePath,
 
         [ValidateSet(2, 3)]
-        [int]$CastVersion = 2
+        [int]$CastVersion = 2,
+
+        # Capture-time audit metadata, written into the header's "bsn" block.
+        [Bsn.Host.Interop.AuditMetadata]$AuditMetadata
     )
 
     $scriptTool = Get-Command -Name 'script' -ErrorAction 'SilentlyContinue'
@@ -78,6 +119,9 @@ function Start-BsnUnixPtyRecording {
         $processInfo.FileName = $scriptTool.Source
         $processInfo.UseShellExecute = $false
 
+        # One element per argument, handed to script(1) as it is: the
+        # recorded command is a single element, quotes and shell
+        # metacharacters included.
         if ($supportsTiming) {
             $timingPath = [System.IO.Path]::GetTempFileName()
             $outputPath = [System.IO.Path]::GetTempFileName()
@@ -86,22 +130,39 @@ function Start-BsnUnixPtyRecording {
             # The invocation shape depends on the installed script(1): probe it
             # (util-linux 2.39+/2.41 reject the positional typescript file that
             # older releases accept - see Resolve-BsnScriptInvocation).
-            $processInfo.Arguments = Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath
+            $scriptArguments = @(Resolve-BsnScriptInvocation -ScriptPath $scriptTool.Source -Command $recordedCommand -TimingPath $timingPath -OutputPath $outputPath)
         }
         else {
             $rawPath = [System.IO.Path]::GetTempFileName()
             $temporaryPaths = @($rawPath)
 
-            if ($Command) {
-                $processInfo.Arguments = ('-q "{0}" /bin/sh -c "{1}"' -f $rawPath, $Command)
-            }
-            else {
-                $processInfo.Arguments = ('-q "{0}" "{1}"' -f $rawPath, (Get-BsnDefaultShell))
-            }
+            # BSD script (macOS) has no -c option: it runs the command given
+            # after the typescript file itself. Its log is flushed every 30
+            # seconds by default, so a recording that is stopped (the engine
+            # kills script(1)) would lose up to that much output: -t 0
+            # flushes after every write, like -f does on util-linux.
+            $recordee = if ($Command) { @('/bin/sh', '-c', $Command) } else { @(Get-BsnDefaultShell) }
+            $scriptArguments = @('-q', '-t', '0', $rawPath) + $recordee
+        }
+        foreach ($scriptArgument in $scriptArguments) {
+            $processInfo.ArgumentList.Add($scriptArgument)
         }
 
-        Write-Verbose -Message ("Recording via: {0} {1}" -f $processInfo.FileName, $processInfo.Arguments)
+        # When the caller's input is not a terminal (CI, a scheduled job) it
+        # is at its end right away. BSD script(1) answers that by sending
+        # the end-of-file character into the session, where the terminal
+        # echoes it as "^D" into the recording; util-linux only stops
+        # forwarding. script(1) then gets an input pipe that stays open
+        # instead: what the caller pipes in is forwarded, and no end-of-file
+        # reaches the session. With a terminal as input, script(1) reads it
+        # itself.
+        $processInfo.RedirectStandardInput = [Console]::IsInputRedirected
+
+        Write-Verbose -Message ("Recording via: {0} {1}" -f $processInfo.FileName, ($scriptArguments -join ' '))
         $recordingProcess = [System.Diagnostics.Process]::Start($processInfo)
+        if ($processInfo.RedirectStandardInput) {
+            $null = [Console]::OpenStandardInput().CopyToAsync($recordingProcess.StandardInput.BaseStream)
+        }
         try {
             while (-not $recordingProcess.HasExited) {
                 if ($StopFilePath -and (Test-Path -LiteralPath $StopFilePath)) {
@@ -122,11 +183,12 @@ function Start-BsnUnixPtyRecording {
         }
         $stopwatch.Stop()
 
+        # The converter owns the header, so the audit metadata is passed to it as-is.
         if ($supportsTiming) {
-            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
+            ConvertTo-BsnAsciicast -OutputPath $outputPath -TimingPath $timingPath -CastPath $CastPath -Width $width -Height $height -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -AuditMetadata $AuditMetadata
         }
         else {
-            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode
+            ConvertTo-BsnAsciicast -OutputPath $temporaryPaths[0] -CastPath $CastPath -Width $width -Height $height -DurationSec $stopwatch.Elapsed.TotalSeconds -ShellName $ShellName -CastVersion $CastVersion -ExitCode $exitCode -AuditMetadata $AuditMetadata
         }
     }
     finally {
