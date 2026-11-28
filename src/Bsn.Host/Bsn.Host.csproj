@@ -29,7 +29,7 @@
        redirects. A new major version is a compatibility decision (see
        AGENTS.md), not a routine update. -->
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="10.0.15" />
+    <PackageReference Include="System.Text.Json" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>
