@@ -5,13 +5,13 @@
     Author = 'BSVN'
     CompanyName = 'BSVN'
     Copyright = '(c) 2026 BSVN. All rights reserved.'
-    Description = 'Interactive terminal session recording for PowerShell hosts: records commands - including full-screen TUI applications - to replayable asciicast v2 files, with in-console playback, Start-Transcript-style text transcript export and optional video rendering.'
+    Description = 'Interactive terminal session recording for PowerShell hosts: records commands - including full-screen TUI applications - to replayable asciicast v2 files, with in-console playback, text transcript and structured audit log export (NDJSON, RFC 5424 syslog, Splunk HEC) and optional video rendering.'
     PowerShellVersion = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
     RequiredModules = @(
         @{ ModuleName = 'Bsn.Common'; ModuleVersion = '0.1.1' }
     )
-    FunctionsToExport = @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript', 'ConvertTo-BsnTranscript')
+    FunctionsToExport = @('Start-InteractiveTranscript', 'Stop-InteractiveTranscript', 'Show-InteractiveTranscript', 'ConvertTo-BsnTranscript', 'ConvertTo-BsnAuditRecord', 'Export-BsnAuditLog')
     CmdletsToExport = @()
     VariablesToExport = @()
     AliasesToExport = @()
